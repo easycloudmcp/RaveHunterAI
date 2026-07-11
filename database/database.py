@@ -33,7 +33,7 @@ class Database:
 
             genre TEXT,
 
-            ticket_url TEXT,
+            ticket_url TEXT UNIQUE,
 
             instagram_url TEXT,
 

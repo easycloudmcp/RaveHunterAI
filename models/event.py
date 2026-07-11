@@ -1,28 +1,31 @@
-from dataclasses import dataclass, field
-from typing import List
+from dataclasses import dataclass
+from typing import Optional
 
 
-@dataclass
+@dataclass(slots=True)
 class Event:
+    event_name: str
 
-    title: str
+    event_date: Optional[str] = None
 
-    venue: str = ""
+    city: Optional[str] = None
 
-    city: str = ""
+    country: Optional[str] = None
 
-    country: str = ""
+    venue: Optional[str] = None
 
-    date: str = ""
+    genre: Optional[str] = None
 
-    time: str = ""
+    ticket_url: Optional[str] = None
 
-    price: str = ""
+    instagram_url: Optional[str] = None
 
-    genres: List[str] = field(default_factory=list)
+    price: Optional[str] = None
 
-    url: str = ""
+    dresscode: Optional[str] = None
+
+    recommendation: Optional[int] = None
+
+    drive_time: Optional[str] = None
 
     source: str = ""
-
-    description: str = ""

@@ -1,4 +1,5 @@
 from playwright.sync_api import Page, TimeoutError, sync_playwright
+
 from models import Event
 
 
@@ -30,8 +31,10 @@ class ShotgunCollector:
 
         print("No clickable cookie banner button found.")
 
-    def collect(self) -> list[dict]:
+    def collect(self) -> list[Event]:
+
         with sync_playwright() as playwright:
+
             browser = playwright.chromium.launch(headless=False)
 
             page = browser.new_page(
@@ -75,12 +78,34 @@ class ShotgunCollector:
 
             browser.close()
 
-        unique_links = []
-        seen_urls = set()
+        events: list[Event] = []
+        seen_urls: set[str] = set()
 
         for link in links:
-            if link["href"] not in seen_urls:
-                seen_urls.add(link["href"])
-                unique_links.append(link)
 
-        return unique_links
+            url = link["href"]
+
+            if url in seen_urls:
+                continue
+
+            seen_urls.add(url)
+
+            raw_text = link["text"].strip()
+
+            lines = [
+                line.strip()
+                for line in raw_text.splitlines()
+                if line.strip()
+            ]
+
+            event_name = lines[0] if lines else "Unknown Event"
+
+            events.append(
+                Event(
+                    event_name=event_name,
+                    ticket_url=url,
+                    source="shotgun",
+                )
+            )
+
+        return events
