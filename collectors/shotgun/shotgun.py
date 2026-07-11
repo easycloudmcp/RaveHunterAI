@@ -4,10 +4,12 @@ from models import Event
 
 
 class ShotgunCollector:
+
     URL = "https://shotgun.live/en"
 
     @staticmethod
     def dismiss_cookie_banner(page: Page) -> None:
+
         selectors = [
             "#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll",
             "#CybotCookiebotDialogBodyLevelButtonLevelOptinDeclineAll",
@@ -17,7 +19,9 @@ class ShotgunCollector:
         ]
 
         for selector in selectors:
+
             try:
+
                 button = page.locator(selector).first
 
                 if button.is_visible(timeout=1500):
@@ -27,18 +31,27 @@ class ShotgunCollector:
                     return
 
             except TimeoutError:
-                continue
+                pass
 
         print("No clickable cookie banner button found.")
 
     def collect(self) -> list[Event]:
 
+        events: list[Event] = []
+
+        seen_urls: set[str] = set()
+
         with sync_playwright() as playwright:
 
-            browser = playwright.chromium.launch(headless=False)
+            browser = playwright.chromium.launch(
+                headless=False
+            )
 
             page = browser.new_page(
-                viewport={"width": 1440, "height": 1000}
+                viewport={
+                    "width": 1440,
+                    "height": 1000,
+                }
             )
 
             page.goto(
@@ -62,50 +75,63 @@ class ShotgunCollector:
                 """
                 elements => elements
                     .map(anchor => ({
-                        text: (anchor.innerText || '').trim(),
+                        text: (anchor.innerText || "").trim(),
                         href: anchor.href
                     }))
                     .filter(item =>
                         item.text &&
                         item.href &&
                         (
-                            item.href.includes('/events/') ||
-                            item.href.includes('/event/')
+                            item.href.includes("/events/")
                         )
                     )
                 """
             )
 
-            browser.close()
+            for link in links:
 
-        events: list[Event] = []
-        seen_urls: set[str] = set()
+                url = link["href"]
 
-        for link in links:
+                if url in seen_urls:
+                    continue
 
-            url = link["href"]
+                seen_urls.add(url)
 
-            if url in seen_urls:
-                continue
+                raw_text = link["text"].strip()
 
-            seen_urls.add(url)
+                lines = [
+                    line.strip()
+                    for line in raw_text.splitlines()
+                    if line.strip()
+                ]
 
-            raw_text = link["text"].strip()
+                event_name = (
+                    lines[0]
+                    if lines
+                    else "Unknown Event"
+                )
 
-            lines = [
-                line.strip()
-                for line in raw_text.splitlines()
-                if line.strip()
-            ]
-
-            event_name = lines[0] if lines else "Unknown Event"
-
-            events.append(
-                Event(
+                event = Event(
                     event_name=event_name,
                     ticket_url=url,
-                    source="shotgun",
+                    source="Shotgun",
                 )
-            )
+
+                #
+                # Sprint 0.5
+                #
+                # Next sprint we visit the event page
+                # and populate:
+                #
+                # venue
+                # date
+                # price
+                # genre
+                # description
+                #
+
+                events.append(event)
+
+            browser.close()
 
         return events

@@ -1,11 +1,14 @@
+"""
+RaveHunter AI
+Main Application Entry Point
+"""
+
 from rich.console import Console
 from rich.panel import Panel
 
 from config.settings import APP_NAME, APP_VERSION
 from database.database import Database
-from database.event_repository import EventRepository
-from collectors.shotgun import ShotgunCollector
-# from collectors.residentadvisor import ResidentAdvisorCollector
+from discovery.discovery_engine import DiscoveryEngine
 
 console = Console()
 
@@ -19,36 +22,49 @@ def startup():
         )
     )
 
+    # ------------------------------------------------------------------
     # Database
+    # ------------------------------------------------------------------
+
     db = Database()
     db.create_tables()
 
-    repository = EventRepository(db.connection)
+    # ------------------------------------------------------------------
+    # Discovery Engine
+    # ------------------------------------------------------------------
 
-    # Collector
-    # collector = ResidentAdvisorCollector()
-    collector = ShotgunCollector()
+    engine = DiscoveryEngine()
 
-    collected_events = collector.collect()
+    events = engine.discover()
 
-    # Store events
-    for event in collected_events:
-        repository.insert(event)
+    # ------------------------------------------------------------------
+    # Output
+    # ------------------------------------------------------------------
 
-    db.connection.commit()
-
-    # Read back from SQLite
-    events = repository.all()
-
-    console.print(f"\nTotal events: {len(events)}\n")
+    console.print(f"\n[bold green]Total events: {len(events)}[/bold green]\n")
 
     for number, event in enumerate(events, start=1):
-        console.print(f"[bold cyan]{number}.[/bold cyan] {event.event_name}")
+
+        console.print(
+            f"[bold cyan]{number}.[/bold cyan] {event.event_name}"
+        )
+
+        if event.venue:
+            console.print(f"   Venue: {event.venue}")
+
+        if event.event_date:
+            console.print(f"   Date : {event.event_date}")
+
+        if event.price:
+            console.print(f"   Price: {event.price}")
+
+        if event.genre:
+            console.print(f"   Genre: {event.genre}")
 
         if event.ticket_url:
-            console.print(f"   {event.ticket_url}")
+            console.print(f"   URL  : {event.ticket_url}")
 
-        console.print(f"   Source: {event.source}\n")
+        console.print()
 
     db.close()
 
