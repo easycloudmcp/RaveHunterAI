@@ -1,0 +1,1 @@
+from .residentadvisor import ResidentAdvisorCollector

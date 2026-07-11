@@ -3,34 +3,31 @@ from rich.panel import Panel
 
 from config.settings import APP_NAME, APP_VERSION
 from database.database import Database
+from collectors.residentadvisor import ResidentAdvisorCollector
 
 console = Console()
 
 
 def startup():
 
-    db = Database()
-
-    db.create_tables()
-
     console.print(
         Panel.fit(
-            f"""
-[bold cyan]{APP_NAME}[/bold cyan]
-
-Version {APP_VERSION}
-
-✓ SQLite Connected
-
-✓ Tables Ready
-""",
-            title="Startup",
+            f"{APP_NAME}\nVersion {APP_VERSION}",
+            title="Startup"
         )
     )
+
+    db = Database()
+    db.create_tables()
+
+    collector = ResidentAdvisorCollector()
+
+    events = collector.collect()
+
+    console.print(f"\nTotal events: {len(events)}")
 
     db.close()
 
 
 if __name__ == "__main__":
-
     startup()
