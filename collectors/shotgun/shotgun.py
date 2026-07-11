@@ -1,4 +1,5 @@
 from playwright.sync_api import Page, TimeoutError, sync_playwright
+from models import Event
 
 
 class ShotgunCollector:
