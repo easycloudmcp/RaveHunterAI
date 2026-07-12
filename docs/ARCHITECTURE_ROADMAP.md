@@ -1,360 +1,241 @@
-# RaveHunter AI -- Architecture & Roadmap
+# RaveHunterAI Architecture
 
-**Version:** Sprint 0.3\
-**Branch:** `feature/shotgun-collector`
+## Vision
 
-## Project Goal
+RaveHunterAI is an AI Event Intelligence Platform.
 
-RaveHunter AI is an event aggregation platform focused on discovering
-electronic music, festivals, underground culture and related events from
-multiple online sources.
+Instead of simply scraping event listings, the platform continuously discovers, stores, enriches and recommends electronic music and lifestyle events from multiple public sources.
 
-The long-term pipeline is:
+Current data sources:
 
-``` text
-Internet
-    ↓
-Collectors (Playwright / APIs)
-    ↓
-Parser
-    ↓
-Event Dataclass
-    ↓
-SQLite Repository
-    ↓
-Search / Dashboard / AI Ranking
-    ↓
-Exports / API
-```
+- Instagram
+- Shotgun
 
-The objective is to collect events once, normalize them into a common
-data model, enrich them with AI, and make them searchable.
+Planned:
 
-------------------------------------------------------------------------
+- Resident Advisor
+- Eventbrite
+- Facebook Events
+- Club websites
+- Ticket providers
 
-# Current Project Structure
+---
 
-``` text
-RaveHunterAI/
-│
-├── collectors/
-├── config/
-├── dashboard/
-├── database/
-├── docs/
-├── exports/
-├── models/
-├── scheduler/
-├── tests/
-└── main.py
-```
+# High Level Architecture
 
-## collectors/
+                Instagram
+                 Shotgun
+          Resident Advisor
+             Eventbrite
+                    │
+                    ▼
+              Collectors
+                    │
+                    ▼
+          Raw Data Models
+     (InstagramPost / Event)
+                    │
+                    ▼
+            Repository Layer
+               (SQLite)
+                    │
+                    ▼
+           AI Enrichment Layer
+        Classification + NLP
+                    │
+                    ▼
+             Event Database
+                    │
+                    ▼
+          Discovery Engine
+                    │
+                    ▼
+ Dashboard / API / Exports
 
-Contains one collector per event source.
+---
+
+# Layers
+
+## Collectors
+
+Responsibility:
+
+Only collect raw information.
+
+Collectors never contain business logic.
+
+Output:
+
+- InstagramPost
+- Event
+- Raw metadata
+
+---
+
+## Parser
+
+Responsibility:
+
+Extract structured information from HTML.
 
 Examples:
 
--   Shotgun
--   Resident Advisor
--   Instagram
--   Dice
--   Eventbrite
+- caption
+- post date
+- URLs
 
-Each collector is responsible only for:
+Parsers never decide whether something is an event.
 
--   opening the website
--   collecting raw event information
--   returning Event objects
+---
 
-Collectors should **not** contain business logic or database logic.
-
-------------------------------------------------------------------------
-
-## database/
+## Repository
 
 Responsible for persistence.
 
-### database.py
-
-Creates the SQLite database.
-
-Creates tables.
-
-Opens and closes connections.
-
-### event_repository.py
-
-Implements the Repository Pattern.
-
-Responsibilities:
-
--   insert Event objects
--   read Event objects
--   later:
-    -   update events
-    -   delete events
-    -   search events
-
-The rest of the application never talks directly to SQLite.
-
-------------------------------------------------------------------------
-
-## models/
-
-Contains domain objects.
-
-Currently:
-
-### event.py
-
-Defines the Event dataclass.
-
-Every collector returns this object.
-
-Every repository stores this object.
-
-Every dashboard displays this object.
-
-This becomes the canonical model used throughout the application.
-
-------------------------------------------------------------------------
-
-## config/
-
-Application configuration.
+No AI logic.
 
 Examples:
 
--   application name
--   version
--   database location
--   API keys
--   browser settings
+save_post()
 
-------------------------------------------------------------------------
+save_event()
 
-## dashboard/
+get_posts()
 
-Reserved for the future web interface.
+get_events()
 
-Possible technologies:
+---
 
--   Streamlit
--   FastAPI
--   NiceGUI
-
-------------------------------------------------------------------------
-
-## exports/
-
-Export formats.
-
-Examples:
-
--   CSV
--   JSON
--   Excel
--   iCalendar (.ics)
-
-------------------------------------------------------------------------
-
-## scheduler/
-
-Responsible for automation.
-
-Future examples:
-
--   run every hour
--   nightly crawl
--   weekly refresh
--   automatic cleanup
-
-------------------------------------------------------------------------
-
-## tests/
-
-Unit tests and integration tests.
-
-Future goals:
-
--   parser tests
--   repository tests
--   collector tests
--   regression tests
-
-------------------------------------------------------------------------
-
-## main.py
-
-Application entry point.
-
-Current workflow:
-
-``` text
-Start
- ↓
-Create Database
- ↓
-Run Collector
- ↓
-Create Event objects
- ↓
-Store in SQLite
- ↓
-Read back
- ↓
-Print
-```
-
-------------------------------------------------------------------------
-
-# Current Architecture
-
-``` text
-Playwright
-      ↓
-Shotgun Collector
-      ↓
-Event Dataclass
-      ↓
-Repository
-      ↓
-SQLite
-      ↓
-Console
-```
-
-------------------------------------------------------------------------
-
-# Design Principles
-
--   One Event model everywhere.
--   One repository for persistence.
--   One collector per source.
--   Duplicate prevention using UNIQUE(ticket_url) and INSERT OR IGNORE.
--   Small incremental development with working software after every
-    step.
-
-------------------------------------------------------------------------
-
-# Completed (Sprint 0.3)
-
--   Project structure
--   Git & GitHub workflow
--   Feature branching
--   SQLite database
--   Event dataclass
--   Repository pattern
--   Playwright integration
--   Shotgun collector
--   Duplicate protection
--   End-to-end persistence
-
-------------------------------------------------------------------------
-
-# Roadmap
-
-## Sprint 0.4
-
-Improve Shotgun parser.
-
-Extract:
-
--   event name
--   venue
--   date
--   price
--   genres
--   city
--   country
-
-Normalize dates to ISO 8601.
-
-------------------------------------------------------------------------
-
-## Sprint 0.5
-
-Instagram collector.
-
-------------------------------------------------------------------------
-
-## Sprint 0.6
-
-Resident Advisor collector.
-
-------------------------------------------------------------------------
-
-## Sprint 0.7
-
-Additional collectors:
-
--   Dice
--   Eventbrite
--   Facebook Events
--   Club websites
-
-------------------------------------------------------------------------
-
-## Sprint 0.8
+## Services
 
 AI enrichment.
 
 Examples:
 
--   recommendation score
--   travel time
--   event similarity
--   music genre classification
--   duplicate detection across websites
+Post classifier
 
-------------------------------------------------------------------------
+Event parser
 
-## Sprint 0.9
+Future:
 
-Dashboard.
+LLM enrichment
 
-Features:
+Genre detection
 
--   search
--   filtering
--   maps
--   favourites
--   export
+City detection
 
-------------------------------------------------------------------------
+Duplicate detection
 
-## Sprint 1.0
+Confidence scoring
 
-Production-ready crawler with scheduled collection, multiple sources, AI
-enrichment and a searchable event database.
+Recommendation scoring
 
-------------------------------------------------------------------------
+---
 
-# Long-Term Vision
+## Database
 
-``` text
-Multiple Sources
-        ↓
-Collectors
-        ↓
-Parser
-        ↓
-Event Model
-        ↓
+SQLite currently.
+
+Later:
+
+PostgreSQL.
+
+Tables:
+
+instagram_posts
+
+events
+
+promoters
+
+venues
+
+artists
+
+genres
+
+crawl_history
+
+---
+
+## Dashboard
+
+Visualisation layer.
+
+Examples:
+
+Today's events
+
+Map
+
+Calendar
+
+Promoters
+
+Genres
+
+Statistics
+
+Recommendations
+
+---
+
+# Design Principles
+
+Single Responsibility
+
+Collectors only crawl.
+
+Parser only extracts.
+
+Services only enrich.
+
+Repository only persists.
+
+Dashboard only visualises.
+
+Every layer should be independently testable.
+
+---
+
+# Future Architecture
+
+Instagram
+Shotgun
+Resident Advisor
+Facebook
+Eventbrite
+Club Websites
+RSS
+
+↓
+
+Unified Collector Interface
+
+↓
+
 Repository
-        ↓
-SQLite
-        ↓
-AI Enrichment
-        ↓
-Dashboard
-        ↓
-REST API
-        ↓
-Mobile App
-```
 
-The architecture is intentionally modular so that adding a new event
-source requires implementing only a new collector while the rest of the
-application remains unchanged.
+↓
+
+AI Processing Pipeline
+
+↓
+
+Knowledge Graph
+
+↓
+
+Recommendation Engine
+
+↓
+
+Dashboard
+
+↓
+
+REST API
+
+↓
+
+Mobile App

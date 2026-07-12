@@ -1,56 +1,56 @@
 from pathlib import Path
 import sqlite3
 
-from config.settings import DATABASE_FILE
+DATABASE_DIR = Path("database")
+DATABASE_DIR.mkdir(exist_ok=True)
+
+DATABASE_FILE = DATABASE_DIR / "ravehunter.db"
 
 
-class Database:
+def get_connection() -> sqlite3.Connection:
+    connection = sqlite3.connect(DATABASE_FILE)
+    connection.row_factory = sqlite3.Row
+    return connection
 
-    def __init__(self):
 
-        self.database = Path(DATABASE_FILE)
+def initialize_database() -> None:
+    conn = get_connection()
+    cursor = conn.cursor()
 
-        self.connection = sqlite3.connect(self.database)
-
-        self.cursor = self.connection.cursor()
-
-    def create_tables(self):
-
-        self.cursor.execute("""
-        CREATE TABLE IF NOT EXISTS events (
-
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS instagram_posts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-            event_name TEXT,
-
-            event_date TEXT,
-
-            city TEXT,
-
-            country TEXT,
-
-            venue TEXT,
-
-            genre TEXT,
-
-            ticket_url TEXT UNIQUE,
-
-            instagram_url TEXT,
-
-            price TEXT,
-
-            dresscode TEXT,
-
-            recommendation INTEGER,
-
-            drive_time TEXT,
-
-            source TEXT
+            post_url TEXT UNIQUE,
+            caption TEXT,
+            post_date TEXT,
+            category TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-        """)
+        """
+    )
 
-        self.connection.commit()
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            instagram_post_id INTEGER,
+            title TEXT,
+            venue TEXT,
+            city TEXT,
+            event_date TEXT,
+            confidence REAL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(instagram_post_id)
+                REFERENCES instagram_posts(id)
+        )
+        """
+    )
 
-    def close(self):
+    conn.commit()
+    conn.close()
 
-        self.connection.close()
+
+if __name__ == "__main__":
+    initialize_database()
+    print("Database initialized.")
