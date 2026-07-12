@@ -1,14 +1,23 @@
-from playwright.sync_api import Page, TimeoutError, sync_playwright
+from playwright.sync_api import Page
 
 from models import Event
+
+from .browser import ShotgunBrowser
+from .parser import ShotgunParser
 
 
 class ShotgunCollector:
 
     URL = "https://shotgun.live/en"
 
+    def __init__(self):
+
+        self.browser = ShotgunBrowser()
+
+        self.parser = ShotgunParser()
+
     @staticmethod
-    def dismiss_cookie_banner(page: Page) -> None:
+    def dismiss_cookie_banner(page: Page):
 
         selectors = [
             "#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll",
@@ -25,113 +34,101 @@ class ShotgunCollector:
                 button = page.locator(selector).first
 
                 if button.is_visible(timeout=1500):
+
                     button.click()
+
                     page.wait_for_timeout(1500)
-                    print(f"Cookie banner dismissed using: {selector}")
+
+                    print(f"Cookie banner dismissed using {selector}")
+
                     return
 
-            except TimeoutError:
+            except Exception:
+
                 pass
 
         print("No clickable cookie banner button found.")
 
+    def discover_links(self, page: Page) -> list[dict]:
+
+        page.wait_for_timeout(4000)
+
+        for _ in range(4):
+
+            page.mouse.wheel(0, 1200)
+
+            page.wait_for_timeout(1000)
+
+        return page.locator("a[href]").evaluate_all(
+            """
+            elements => elements
+                .map(anchor => ({
+                    text: (anchor.innerText || "").trim(),
+                    href: anchor.href
+                }))
+                .filter(item =>
+                    item.text &&
+                    item.href &&
+                    item.href.includes("/events/")
+                )
+            """
+        )
+
     def collect(self) -> list[Event]:
+
+        homepage = self.browser.open(self.URL)
+
+        self.dismiss_cookie_banner(homepage)
+
+        print(f"Title: {homepage.title()}")
+
+        links = self.discover_links(homepage)
 
         events: list[Event] = []
 
-        seen_urls: set[str] = set()
+        seen = set()
 
-        with sync_playwright() as playwright:
+        #
+        # Sprint 0.5
+        #
+        # For now
+        # only create Event objects.
+        #
+        # Next sprint
+        # parser.parse(...)
+        #
 
-            browser = playwright.chromium.launch(
-                headless=False
+        for link in links:
+
+            url = link["href"]
+
+            if url in seen:
+                continue
+
+            seen.add(url)
+
+            text = link["text"].strip()
+
+            lines = [
+                line.strip()
+                for line in text.splitlines()
+                if line.strip()
+            ]
+
+            event_name = (
+                lines[0]
+                if lines
+                else "Unknown Event"
             )
 
-            page = browser.new_page(
-                viewport={
-                    "width": 1440,
-                    "height": 1000,
-                }
-            )
-
-            page.goto(
-                self.URL,
-                wait_until="domcontentloaded",
-                timeout=60000,
-            )
-
-            self.dismiss_cookie_banner(page)
-
-            page.wait_for_timeout(4000)
-
-            for _ in range(4):
-                page.mouse.wheel(0, 1200)
-                page.wait_for_timeout(1000)
-
-            print(f"Title: {page.title()}")
-            print(f"URL: {page.url}")
-
-            links = page.locator("a[href]").evaluate_all(
-                """
-                elements => elements
-                    .map(anchor => ({
-                        text: (anchor.innerText || "").trim(),
-                        href: anchor.href
-                    }))
-                    .filter(item =>
-                        item.text &&
-                        item.href &&
-                        (
-                            item.href.includes("/events/")
-                        )
-                    )
-                """
-            )
-
-            for link in links:
-
-                url = link["href"]
-
-                if url in seen_urls:
-                    continue
-
-                seen_urls.add(url)
-
-                raw_text = link["text"].strip()
-
-                lines = [
-                    line.strip()
-                    for line in raw_text.splitlines()
-                    if line.strip()
-                ]
-
-                event_name = (
-                    lines[0]
-                    if lines
-                    else "Unknown Event"
-                )
-
-                event = Event(
+            events.append(
+                Event(
                     event_name=event_name,
                     ticket_url=url,
                     source="Shotgun",
                 )
+            )
 
-                #
-                # Sprint 0.5
-                #
-                # Next sprint we visit the event page
-                # and populate:
-                #
-                # venue
-                # date
-                # price
-                # genre
-                # description
-                #
-
-                events.append(event)
-
-            browser.close()
+        self.browser.close()
 
         return events

@@ -5,9 +5,20 @@ from models import Event
 
 class ShotgunParser:
 
-    def parse(self, page: Page, url: str) -> Event:
+    def parse(
+        self,
+        page: Page,
+        url: str,
+    ) -> Event:
 
         title = page.title()
+
+        print("\n----------------------------")
+        print("EVENT PAGE")
+        print("----------------------------")
+        print(title)
+        print(url)
+        print("----------------------------\n")
 
         return Event(
             event_name=title,
