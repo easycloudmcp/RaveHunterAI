@@ -25,6 +25,7 @@ def initialize_database() -> None:
             caption TEXT,
             post_date TEXT,
             category TEXT,
+            ai_processed INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """

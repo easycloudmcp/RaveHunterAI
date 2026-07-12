@@ -6,6 +6,8 @@ from collectors.instagram.models import InstagramPost
 from collectors.instagram.parser import InstagramParser
 from collectors.instagram.post_parser import InstagramPostParser
 
+from repositories.instagram_repository import InstagramRepository
+
 from services import (
     InstagramEventParser,
     InstagramPostClassifier,
@@ -21,6 +23,8 @@ class InstagramCollector:
 
         self.classifier = InstagramPostClassifier()
         self.event_parser = InstagramEventParser()
+
+        self.repository = InstagramRepository()
 
     def collect(
         self,
@@ -69,6 +73,8 @@ class InstagramCollector:
                 category=classification.category,
                 parsed_event=parsed_event,
             )
+
+            self.repository.save_post(post)
 
             posts.append(post)
 

@@ -6,14 +6,34 @@ from typing import Optional
 from services.instagram_event_parser import ParsedInstagramEvent
 
 
-@dataclass
+@dataclass(slots=True)
 class InstagramPost:
-    url: str
-    caption: str
+
+    #
+    # Database
+    #
+
+    id: Optional[int] = None
+
+    ai_processed: bool = False
+
+    #
+    # Instagram
+    #
+
+    url: str = ""
+
+    caption: str = ""
+
     post_date: Optional[str] = None
 
     image_url: Optional[str] = None
+
     video_url: Optional[str] = None
+
+    #
+    # AI
+    #
 
     category: Optional[str] = None
 
