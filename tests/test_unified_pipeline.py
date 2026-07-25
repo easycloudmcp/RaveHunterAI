@@ -22,10 +22,13 @@ def repository():
 def record(external_id="meta-1"):
     return NormalizedSourceRecord(
         source=EventSource.INSTAGRAM,
-        external_id=external_id,
-        content="Rave Night\nMünchen",
+        account_id="account-1",
+        media_id=external_id,
+        caption="Rave Night\nMünchen",
+        media_type="IMAGE",
+        media_url=None,
         permalink=f"https://instagram.com/p/{external_id}",
-        raw_evidence_refs=(f"https://instagram.com/p/{external_id}",),
+        raw_evidence_reference=f"file:///evidence/{external_id}.json",
     )
 
 

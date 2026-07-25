@@ -15,3 +15,8 @@ The new `canonical_events` table is intentionally separate from the legacy
 migration. Raw source IDs and evidence URLs are retained. The current adapter
 uses `Unknown venue` where legacy data has no venue and does not invent a date;
 such undated records fail canonical validation.
+
+Canonical persistence now serializes pricing, promoter, music, and media
+metadata and records the event processing state. Existing databases are upgraded
+additively when `create_tables` runs; the legacy table remains a documented
+compatibility path and receives no Meta-specific columns.

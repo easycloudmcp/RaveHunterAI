@@ -9,10 +9,12 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from ravehunter.discovery.source import NormalizedSourceRecord
+from ravehunter.discovery.artifacts import LocalRawArtifactStorage, RawArtifactStorage
 from ravehunter.domain.enums import EventSource
 
 LOGGER = logging.getLogger(__name__)
@@ -40,6 +42,7 @@ class MetaConfig:
     account_ids: tuple[str, ...]
     api_version: str = "v23.0"
     timeout_seconds: float = 10.0
+    max_pages: int = 2
     max_retries: int = 3
 
     @classmethod
@@ -47,18 +50,21 @@ class MetaConfig:
         token = os.environ.get("META_ACCESS_TOKEN", "")
         accounts = tuple(
             item.strip()
-            for item in os.environ.get("META_IG_ACCOUNT_IDS", "").split(",")
+            for item in os.environ.get("META_INSTAGRAM_ACCOUNT_IDS", "").split(",")
             if item.strip()
         )
         if not token or not accounts:
             raise MetaConnectorError(
-                "META_ACCESS_TOKEN and META_IG_ACCOUNT_IDS must be configured."
+                "META_ACCESS_TOKEN and META_INSTAGRAM_ACCOUNT_IDS must be configured."
             )
         return cls(
             access_token=token,
             account_ids=accounts,
             api_version=os.environ.get("META_GRAPH_API_VERSION", "v23.0"),
-            timeout_seconds=float(os.environ.get("META_TIMEOUT_SECONDS", "10")),
+            timeout_seconds=float(
+                os.environ.get("META_REQUEST_TIMEOUT_SECONDS", "10")
+            ),
+            max_pages=int(os.environ.get("META_MAX_PAGES", "2")),
             max_retries=int(os.environ.get("META_MAX_RETRIES", "3")),
         )
 
@@ -86,10 +92,14 @@ class MetaGraphClient:
         *,
         transport: Transport = _default_transport,
         sleeper: Callable[[float], None] = time.sleep,
+        artifact_storage: RawArtifactStorage | None = None,
     ) -> None:
         self.config = config
         self._transport = transport
         self._sleep = sleeper
+        self._artifact_storage = artifact_storage or LocalRawArtifactStorage(
+            Path("data") / "raw-evidence" / "meta"
+        )
 
     def _initial_url(self, account_id: str) -> str:
         query = urllib.parse.urlencode(
@@ -125,6 +135,20 @@ class MetaGraphClient:
 
             if status in (401, 403):
                 raise MetaAuthenticationError("Meta rejected the configured credentials.")
+            if status == 400:
+                try:
+                    error_document = json.loads(body)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    error_document = {}
+                meta_error = (
+                    error_document.get("error")
+                    if isinstance(error_document, dict)
+                    else None
+                )
+                if isinstance(meta_error, dict) and meta_error.get("code") == 190:
+                    raise MetaAuthenticationError(
+                        "Meta rejected an invalid or expired access token."
+                    )
             if status == 429 or status >= 500:
                 if attempt >= self.config.max_retries:
                     if status == 429:
@@ -146,11 +170,15 @@ class MetaGraphClient:
         raise AssertionError("unreachable")
 
     def iter_media(
-        self, account_id: str, *, max_pages: int = 2
+        self, account_id: str, *, max_pages: int | None = None
     ) -> Iterator[NormalizedSourceRecord]:
+        page_limit = self.config.max_pages if max_pages is None else max_pages
+        if page_limit < 1:
+            raise MetaConnectorError("Meta maximum pages must be at least 1.")
         url: str | None = self._initial_url(account_id)
         pages = 0
-        while url and pages < max_pages:
+        seen_media_ids: set[str] = set()
+        while url and pages < page_limit:
             payload = self._request(url)
             data = payload.get("data")
             if not isinstance(data, list):
@@ -158,6 +186,9 @@ class MetaGraphClient:
             for item in data:
                 if not isinstance(item, dict) or not isinstance(item.get("id"), str):
                     raise MetaMalformedResponseError("Meta media item is malformed.")
+                if item["id"] in seen_media_ids:
+                    continue
+                seen_media_ids.add(item["id"])
                 timestamp = item.get("timestamp")
                 try:
                     published = (
@@ -171,18 +202,24 @@ class MetaGraphClient:
                     ) from error
                 permalink = item.get("permalink", "")
                 media_url = item.get("media_url")
+                collected_at = datetime.now(UTC)
+                artifact = self._artifact_storage.store(
+                    account_id=account_id,
+                    media_id=item["id"],
+                    payload=item,
+                    collected_at=collected_at,
+                )
                 yield NormalizedSourceRecord(
                     source=EventSource.INSTAGRAM,
-                    external_id=item["id"],
-                    content=str(item.get("caption", "")),
+                    account_id=account_id,
+                    media_id=item["id"],
+                    caption=str(item.get("caption", "")),
                     permalink=str(permalink),
                     published_at=published,
                     media_type=str(item.get("media_type", "")) or None,
                     media_url=str(media_url) if media_url else None,
-                    raw_evidence_refs=tuple(
-                        str(value) for value in (permalink, media_url) if value
-                    ),
-                    raw_evidence={"account_id": account_id, "media": item},
+                    collected_at=collected_at,
+                    raw_evidence_reference=artifact.reference,
                 )
             paging = payload.get("paging", {})
             if not isinstance(paging, dict):
@@ -193,7 +230,7 @@ class MetaGraphClient:
             url = next_url
             pages += 1
 
-    def collect(self, *, max_pages: int = 2) -> list[NormalizedSourceRecord]:
+    def collect(self, *, max_pages: int | None = None) -> list[NormalizedSourceRecord]:
         return [
             record
             for account_id in self.config.account_ids

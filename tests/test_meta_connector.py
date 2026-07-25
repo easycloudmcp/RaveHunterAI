@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import UTC, datetime
 
 import pytest
 
@@ -11,6 +12,7 @@ from ravehunter.collectors.meta import (
     MetaMalformedResponseError,
     MetaRateLimitError,
 )
+from ravehunter.discovery.artifacts import LocalRawArtifactStorage
 
 
 def response(payload, status=200, headers=None):
@@ -146,3 +148,47 @@ def test_debug_log_redacts_token(caplog):
     client.collect()
     assert "secret-token" not in caplog.text
     assert "%3Credacted%3E" in caplog.text
+
+
+def test_expired_token_error_is_normalized():
+    client = MetaGraphClient(
+        config(),
+        transport=lambda url, timeout: response(
+            {"error": {"code": 190, "message": "expired secret-token"}},
+            status=400,
+        ),
+    )
+    with pytest.raises(MetaAuthenticationError) as caught:
+        client.collect()
+    assert "secret-token" not in str(caught.value)
+
+
+def test_duplicate_media_is_emitted_once(tmp_path):
+    payload = {"data": [{"id": "same"}, {"id": "same"}]}
+    client = MetaGraphClient(
+        config(),
+        transport=lambda url, timeout: response(payload),
+        artifact_storage=LocalRawArtifactStorage(tmp_path),
+    )
+    assert [record.media_id for record in client.collect()] == ["same"]
+
+
+def test_raw_artifact_storage_redacts_credentials(tmp_path):
+    storage = LocalRawArtifactStorage(tmp_path)
+    artifact = storage.store(
+        account_id="account-1",
+        media_id="media-1",
+        payload={"caption": "safe", "access_token": "secret-token"},
+        collected_at=datetime.now(UTC),
+    )
+    stored = next(tmp_path.rglob("*.json")).read_text(encoding="utf-8")
+    assert artifact.reference.startswith("file:")
+    assert "secret-token" not in stored
+    assert "<redacted>" in stored
+
+
+def test_required_environment_configuration(monkeypatch):
+    monkeypatch.delenv("META_ACCESS_TOKEN", raising=False)
+    monkeypatch.delenv("META_INSTAGRAM_ACCOUNT_IDS", raising=False)
+    with pytest.raises(MetaConnectorError, match="must be configured"):
+        MetaConfig.from_env()

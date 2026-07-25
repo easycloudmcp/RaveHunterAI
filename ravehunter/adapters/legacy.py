@@ -70,15 +70,12 @@ def instagram_post_to_source(post: InstagramPost) -> NormalizedSourceRecord:
     evidence = tuple(url for url in (post.url, post.image_url, post.video_url) if url)
     return NormalizedSourceRecord(
         source=EventSource.INSTAGRAM,
-        external_id=str(post.id) if post.id is not None else post.url,
-        content=post.caption,
+        account_id="legacy-browser-collector",
+        media_id=str(post.id) if post.id is not None else post.url,
+        caption=post.caption,
         permalink=post.url,
         published_at=_parse_datetime(post.post_date),
         media_type="VIDEO" if post.video_url else "IMAGE",
         media_url=post.video_url or post.image_url,
-        raw_evidence_refs=evidence,
-        raw_evidence={
-            "legacy_instagram_id": post.id,
-            "category": post.category,
-        },
+        raw_evidence_reference=evidence[0] if evidence else "",
     )

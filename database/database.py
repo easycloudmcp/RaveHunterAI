@@ -63,11 +63,16 @@ def create_tables(connection: sqlite3.Connection) -> None:
             country TEXT,
             starts_at TEXT NOT NULL,
             ends_at TEXT,
+            pricing TEXT NOT NULL,
+            promoter TEXT,
+            music_metadata TEXT NOT NULL,
+            media_metadata TEXT NOT NULL,
             source_urls TEXT NOT NULL,
             classification_label TEXT NOT NULL,
             confidence REAL NOT NULL CHECK(confidence >= 0 AND confidence <= 1),
             classification_reason TEXT NOT NULL,
             duplicate_key TEXT NOT NULL UNIQUE,
+            processing_state TEXT NOT NULL,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             UNIQUE(source, external_id)
@@ -76,6 +81,22 @@ def create_tables(connection: sqlite3.Connection) -> None:
             ON canonical_events(city);
         """
     )
+    existing_columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(canonical_events)")
+    }
+    migrations = {
+        "pricing": "TEXT NOT NULL DEFAULT '{}'",
+        "promoter": "TEXT",
+        "music_metadata": "TEXT NOT NULL DEFAULT '{}'",
+        "media_metadata": "TEXT NOT NULL DEFAULT '{}'",
+        "processing_state": "TEXT NOT NULL DEFAULT 'discovered'",
+    }
+    for column, definition in migrations.items():
+        if column not in existing_columns:
+            connection.execute(
+                f"ALTER TABLE canonical_events ADD COLUMN {column} {definition}"
+            )
     connection.commit()
 
 

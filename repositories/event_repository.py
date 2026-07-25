@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from dataclasses import asdict
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -12,6 +13,9 @@ from ravehunter.domain.enums import EventSource
 from ravehunter.domain.event import Event
 from ravehunter.domain.location import Location
 from ravehunter.domain.media import Media
+from ravehunter.domain.music import MusicProfile
+from ravehunter.domain.pricing import Pricing
+from ravehunter.domain.promoter import Promoter
 from ravehunter.domain.schedule import Schedule
 from ravehunter.domain.venue import Venue
 
@@ -35,10 +39,11 @@ class EventRepository:
             INSERT OR IGNORE INTO canonical_events (
                 id, source, external_id, raw_source_id, raw_evidence_refs,
                 title, description, venue_id, venue_name, city, country,
-                starts_at, ends_at, source_urls, classification_label,
+                starts_at, ends_at, pricing, promoter, music_metadata,
+                media_metadata, source_urls, classification_label,
                 confidence, classification_reason, duplicate_key, created_at,
-                updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                updated_at, processing_state
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 str(event.id),
@@ -54,6 +59,10 @@ class EventRepository:
                 event.venue.location.country,
                 event.schedule.start.isoformat(),
                 event.schedule.end.isoformat() if event.schedule.end else None,
+                json.dumps(asdict(event.pricing)),
+                json.dumps(asdict(event.promoter)) if event.promoter else None,
+                json.dumps(asdict(event.music)),
+                json.dumps(asdict(event.media)),
                 json.dumps(event.media.source_urls),
                 event.classification_label,
                 event.confidence.value,
@@ -61,6 +70,7 @@ class EventRepository:
                 event.duplicate_key,
                 event.created.isoformat(),
                 event.updated.isoformat(),
+                event.status.value,
             ),
         )
         self.connection.commit()
@@ -162,7 +172,12 @@ class EventRepository:
                 start=datetime.fromisoformat(row["starts_at"]),
                 end=datetime.fromisoformat(row["ends_at"]) if row["ends_at"] else None,
             ),
-            media=Media(source_urls=json.loads(row["source_urls"])),
+            pricing=Pricing(**json.loads(row["pricing"])),
+            promoter=(
+                Promoter(**json.loads(row["promoter"])) if row["promoter"] else None
+            ),
+            music=MusicProfile(**json.loads(row["music_metadata"])),
+            media=Media(**json.loads(row["media_metadata"])),
             classification_label=row["classification_label"],
             classification_reason=row["classification_reason"],
             confidence=Confidence(

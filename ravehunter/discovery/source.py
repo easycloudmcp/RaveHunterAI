@@ -1,21 +1,38 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 
 from ravehunter.domain.enums import EventSource
 
 
 @dataclass(frozen=True, slots=True)
 class NormalizedSourceRecord:
-    """Provider-neutral record handed from collectors to the pipeline."""
+    """Typed Meta record handed from collectors to service boundaries."""
 
     source: EventSource
-    external_id: str
-    content: str
+    account_id: str
+    media_id: str
+    caption: str
+    media_type: str | None
+    media_url: str | None
     permalink: str
     published_at: datetime | None = None
-    media_type: str | None = None
-    media_url: str | None = None
-    raw_evidence_refs: tuple[str, ...] = ()
-    raw_evidence: dict[str, object] = field(default_factory=dict)
+    collected_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    raw_evidence_reference: str = ""
+
+    @property
+    def external_id(self) -> str:
+        return self.media_id
+
+    @property
+    def content(self) -> str:
+        return self.caption
+
+    @property
+    def raw_evidence_refs(self) -> tuple[str, ...]:
+        return tuple(
+            value
+            for value in (self.raw_evidence_reference, self.permalink, self.media_url)
+            if value
+        )

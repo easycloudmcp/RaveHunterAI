@@ -277,7 +277,7 @@ Meta collector reads credentials only from the environment:
 
 ```powershell
 $env:META_ACCESS_TOKEN = "..."
-$env:META_IG_ACCOUNT_IDS = "1784...,1784..."
+$env:META_INSTAGRAM_ACCOUNT_IDS = "1784...,1784..."
 $env:RAVEHUNTER_DATABASE = "data/ravehunter.db"
 python -m ravehunter.cli collect meta --max-pages 2
 python -m ravehunter.cli collect shotgun
