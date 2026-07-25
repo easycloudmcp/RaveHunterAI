@@ -43,11 +43,11 @@ Future expansion:
 
 Current Branch
 
-feature/shotgun-collector
+feature/ai-enrichment-pipeline
 
 Current Sprint
 
-v0.3.0 — SQLite Persistence
+Sprint 0.9 — AI Provider Layer (`v0.3.0-alpha`)
 
 Latest Stable Release
 
@@ -243,44 +243,32 @@ Stable releases only
 
 feature/shotgun-collector
 
-Current development
+Merged into main
 
 experiment/residentadvisor-persistent-profile
 
 Research branch
 
+feature/ai-enrichment-pipeline
+
+Current development
+
 ---
 
 # Roadmap
 
-Sprint 0.5
-
-- Parse Shotgun Event Pages
-- Populate complete Event objects
-
-Sprint 0.6
-
-- SQLite Repository
-- Event Persistence
-
-Sprint 0.7
-
-- Instagram Discovery
-
-Sprint 0.8
-
-- Facebook Events
-
 Sprint 0.9
 
-- In-München Collector
+- Canonical Event domain model
+- AI provider contract and factory
+- Deterministic mock provider
+- Prompt library
 
 Sprint 1.0
 
-- AI Enrichment
+- Unified discovery engine
 - Dashboard
 - Calendar Export
-- Excel Export
 
 ---
 

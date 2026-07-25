@@ -29,6 +29,7 @@ py-modules = ["main"]
 [tool.setuptools.packages.find]
 where = ["."]
 include = [
+    "ravehunter*",
     "collectors*",
     "config*",
     "database*",
@@ -38,6 +39,9 @@ include = [
     "services*",
 ]
 namespaces = true
+
+[tool.setuptools.data-files]
+"share/ravehunter/prompts" = ["prompts/*.md"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"
