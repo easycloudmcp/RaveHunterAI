@@ -32,7 +32,13 @@ class NormalizedSourceRecord:
     @property
     def raw_evidence_refs(self) -> tuple[str, ...]:
         return tuple(
-            value
-            for value in (self.raw_evidence_reference, self.permalink, self.media_url)
-            if value
+            dict.fromkeys(
+                value
+                for value in (
+                    self.raw_evidence_reference,
+                    self.permalink,
+                    self.media_url,
+                )
+                if value
+            )
         )

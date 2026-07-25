@@ -82,7 +82,7 @@ def create_tables(connection: sqlite3.Connection) -> None:
         """
     )
     existing_columns = {
-        row["name"]
+        row[1]
         for row in connection.execute("PRAGMA table_info(canonical_events)")
     }
     migrations = {
