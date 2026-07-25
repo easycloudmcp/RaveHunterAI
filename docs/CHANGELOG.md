@@ -27,17 +27,24 @@ the collector and persistence tests merged into `main`.
 
 ### Milestone 2 — AI provider layer
 
-Planned:
+Completed:
 
-- define one provider contract for classification, extraction, enrichment, and
-  embeddings
-- implement a deterministic mock provider first
-- select providers through a factory
-- add prompt templates and provider/factory tests
-- keep OpenAI, Azure OpenAI, Ollama, and LM Studio implementations free of live
-  calls until their integrations are explicitly enabled
+- defined one abstract provider contract for classification, extraction,
+  enrichment, and embeddings
+- added normalized classification results
+- implemented a deterministic mock provider for local development and tests
+- added a provider factory that defaults to the mock and rejects unavailable
+  providers
+- added fail-closed OpenAI, Azure OpenAI, Ollama, and LM Studio adapters
+- added provider-neutral system, classification, and event-extraction prompts
+- added prompt-injection boundaries and evidence-only extraction rules
+- included the canonical domain package and prompt files in the wheel
+- added wheel construction to the Python 3.11 and 3.13 CI matrix
+- expanded the deterministic test suite to 52 passing tests
 
-No API keys, external AI calls, or provider costs are part of this milestone.
+No API keys, external AI calls, live model requests, or provider costs were
+introduced. Live providers remain unavailable until their individual
+integration and security reviews are complete.
 
 ## 25 July 2026 — Stabilization and CI
 
