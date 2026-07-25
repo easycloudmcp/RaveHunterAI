@@ -10,6 +10,20 @@ RaveHunter AI is an AI-powered discovery platform that automatically finds, coll
 
 Instead of relying on a single event website, RaveHunter combines multiple discovery sources into one unified event database.
 
+## Local development
+
+RaveHunterAI requires Python 3.11 or newer. The default test suite is
+deterministic and does not launch browsers or contact collector websites.
+
+```bash
+python -m venv .venv
+.venv/bin/python -m pip install --requirement requirements.lock
+.venv/bin/python -m pip install --no-deps --no-build-isolation --editable .
+.venv/bin/python -m pytest
+```
+
+Live collector experiments are kept separate from the automated test suite.
+
 Current focus:
 
 - Germany
@@ -33,7 +47,7 @@ feature/shotgun-collector
 
 Current Sprint
 
-Sprint 0.4
+v0.3.0 — SQLite Persistence
 
 Latest Stable Release
 

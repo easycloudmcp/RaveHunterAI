@@ -1,34 +1,23 @@
 from services.instagram_event_parser import InstagramEventParser
 
 
-TEST_CAPTION = """
-Techno Open Air München
+def test_parses_event_fields_from_caption() -> None:
+    caption = """
+    Techno Open Air München
 
-19.07.2026
-Doors 14:00 Uhr
+    19.07.2026
+    Doors 14:00 Uhr
 
-Join us for a full day of melodic techno.
-
-Tickets:
-https://shotgun.live/events/techno-open-air
-
-See you on the dancefloor.
-"""
-
-
-def main() -> None:
+    Tickets:
+    https://shotgun.live/events/techno-open-air
+    """
     parser = InstagramEventParser()
+    event = parser.parse(caption)
 
-    event = parser.parse(TEST_CAPTION)
-
-    print("\nParsed Event")
-    print("-" * 40)
-    print(f"Title : {event.title}")
-    print(f"Date  : {event.date}")
-    print(f"Time  : {event.time}")
-    print(f"City  : {event.city}")
-    print(f"URL   : {event.ticket_url}")
-
-
-if __name__ == "__main__":
-    main()
+    assert event.title == "Techno Open Air München"
+    assert event.date == "19.07.2026"
+    assert event.time == "14:00"
+    assert event.city == "München"
+    assert event.ticket_url == (
+        "https://shotgun.live/events/techno-open-air"
+    )

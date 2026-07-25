@@ -8,9 +8,8 @@ class EventRepository:
     def __init__(self, connection: Connection):
         self.connection = connection
 
-    def insert(self, event: Event):
-
-        self.connection.execute(
+    def insert(self, event: Event) -> bool:
+        cursor = self.connection.execute(
             """
             INSERT OR IGNORE INTO events (
                 event_name,
@@ -45,9 +44,10 @@ class EventRepository:
                 event.source,
             ),
         )
+        self.connection.commit()
+        return cursor.rowcount == 1
 
-    def all(self):
-
+    def all(self) -> list[Event]:
         cursor = self.connection.execute(
             """
             SELECT

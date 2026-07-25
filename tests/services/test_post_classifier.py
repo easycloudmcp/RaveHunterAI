@@ -1,60 +1,36 @@
+import pytest
+
 from services import InstagramPostClassifier
+from services.post_classifier import PostCategory
 
 
-TEST_CAPTIONS = [
-    (
-        "Event announcement",
-        """
-        Save the date: 19.07.2026
-        Techno Open Air in München.
-        Doors 14:00 Uhr.
-        Tickets available now.
-        """,
-    ),
-    (
-        "Event recap",
-        """
-        Danke München. Was für eine Nacht.
-        Zwei ausverkaufte Shows und unvergessliche Momente.
-        Wer war dabei?
-        """,
-    ),
-    (
-        "Culture post",
-        """
-        Techno ist kein Hobby.
-        Techno ist Lebenseinstellung.
-        Mehr Bass. Weniger Hass.
-        """,
-    ),
-    (
-        "Artist promotion",
-        """
-        New release out now.
-        Stream the new single from our favourite DJ.
-        """,
-    ),
-    (
-        "Other",
-        """
-        Heute scheint in München endlich wieder die Sonne.
-        """,
-    ),
-]
+@pytest.mark.parametrize(
+    ("caption", "expected"),
+    [
+        (
+            "Save the date: 19.07.2026. Doors 14:00 Uhr. Tickets now.",
+            PostCategory.EVENT_ANNOUNCEMENT,
+        ),
+        (
+            "Danke München. Was für eine Nacht. Wer war dabei?",
+            PostCategory.EVENT_RECAP,
+        ),
+        (
+            "Techno ist Lebenseinstellung. Mehr Bass. Weniger Hass.",
+            PostCategory.MEME_OR_CULTURE,
+        ),
+        (
+            "New release out now from our favourite DJ.",
+            PostCategory.VENUE_OR_ARTIST_PROMOTION,
+        ),
+        (
+            "Heute scheint in München endlich wieder die Sonne.",
+            PostCategory.OTHER,
+        ),
+    ],
+)
+def test_classifies_caption(caption: str, expected: PostCategory) -> None:
+    result = InstagramPostClassifier().classify(caption)
 
-
-def main() -> None:
-    classifier = InstagramPostClassifier()
-
-    for label, caption in TEST_CAPTIONS:
-        result = classifier.classify(caption)
-
-        print(f"\n{label}")
-        print("-" * 40)
-        print(f"Category  : {result.category}")
-        print(f"Confidence: {result.confidence}%")
-        print(f"Reason    : {result.reason}")
-
-
-if __name__ == "__main__":
-    main()
+    assert result.category is expected
+    assert 0 <= result.confidence <= 100
