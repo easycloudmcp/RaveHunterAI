@@ -37,18 +37,28 @@ Completed
 
 ---
 
-# v0.3.0
+# v0.3.0-alpha
 
-SQLite Persistence
+AI Foundation
 
-Current Sprint
+Current Development
 
-Goals
+Completed
 
 - Store every Instagram post
 - Repository layer
 - Event table
 - Separation of collector and AI logic
+- Canonical Event domain model
+
+Current Sprint: Sprint 0.9 — AI Provider Layer
+
+Goals
+
+- Provider contract and factory
+- Deterministic mock provider
+- Prompt library
+- Provider and factory tests
 
 ---
 
