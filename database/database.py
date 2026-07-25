@@ -1,56 +1,76 @@
-from pathlib import Path
 import sqlite3
+from pathlib import Path
+from typing import Final
 
-from config.settings import DATABASE_FILE
+from config.settings import DATABASE_FILE as CONFIGURED_DATABASE_FILE
+
+DATABASE_FILE: Final = Path(CONFIGURED_DATABASE_FILE)
+
+
+def get_connection(database_file: str | Path = DATABASE_FILE) -> sqlite3.Connection:
+    path = Path(database_file)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(path)
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
+def create_tables(connection: sqlite3.Connection) -> None:
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS instagram_posts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_url TEXT UNIQUE NOT NULL,
+            caption TEXT,
+            post_date TEXT,
+            category TEXT,
+            ai_processed INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_name TEXT NOT NULL,
+            event_date TEXT,
+            city TEXT,
+            country TEXT,
+            venue TEXT,
+            genre TEXT,
+            ticket_url TEXT UNIQUE,
+            instagram_url TEXT,
+            price TEXT,
+            dresscode TEXT,
+            recommendation INTEGER,
+            drive_time TEXT,
+            source TEXT NOT NULL,
+            instagram_post_id INTEGER,
+            confidence REAL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(instagram_post_id) REFERENCES instagram_posts(id)
+        );
+        """
+    )
+    connection.commit()
+
+
+def initialize_database(database_file: str | Path = DATABASE_FILE) -> None:
+    with get_connection(database_file) as connection:
+        create_tables(connection)
 
 
 class Database:
+    """Compatibility wrapper used by the application entry point."""
 
-    def __init__(self):
+    def __init__(self, database_file: str | Path = DATABASE_FILE) -> None:
+        self.connection = get_connection(database_file)
 
-        self.database = Path(DATABASE_FILE)
+    def create_tables(self) -> None:
+        create_tables(self.connection)
 
-        self.connection = sqlite3.connect(self.database)
-
-        self.cursor = self.connection.cursor()
-
-    def create_tables(self):
-
-        self.cursor.execute("""
-        CREATE TABLE IF NOT EXISTS events (
-
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-            event_name TEXT,
-
-            event_date TEXT,
-
-            city TEXT,
-
-            country TEXT,
-
-            venue TEXT,
-
-            genre TEXT,
-
-            ticket_url TEXT,
-
-            instagram_url TEXT,
-
-            price TEXT,
-
-            dresscode TEXT,
-
-            recommendation INTEGER,
-
-            drive_time TEXT,
-
-            source TEXT
-        )
-        """)
-
-        self.connection.commit()
-
-    def close(self):
-
+    def close(self) -> None:
         self.connection.close()
+
+
+if __name__ == "__main__":
+    initialize_database()
+    print("Database initialized.")

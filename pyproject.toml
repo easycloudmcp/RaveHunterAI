@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ravehunter-ai"
+version = "0.3.0a0"
+description = "Local-first event discovery and intelligence prototype"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "beautifulsoup4==4.15.0",
+    "playwright==1.61.0",
+    "rich==15.0.0",
+    "streamlit==1.59.1",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest==9.1.1",
+]
+
+[project.scripts]
+ravehunter = "main:startup"
+
+[tool.setuptools]
+py-modules = ["main"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "collectors*",
+    "config*",
+    "database*",
+    "discovery*",
+    "models*",
+    "repositories*",
+    "services*",
+]
+namespaces = true
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
