@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
@@ -46,6 +45,10 @@ class Event:
 
     external_id: str | None = None
 
+    raw_source_id: str | None = None
+
+    raw_evidence_refs: list[str] = field(default_factory=list)
+
     # ------------------------------------------------------------------
     # Core Information
     # ------------------------------------------------------------------
@@ -82,6 +85,10 @@ class Event:
             source="system",
         )
     )
+
+    classification_label: str = "unclassified"
+
+    classification_reason: str = ""
 
     tags: list[str] = field(default_factory=list)
 

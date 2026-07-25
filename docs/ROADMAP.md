@@ -62,6 +62,19 @@ Goals
 
 ---
 
+# Sprint 1.0
+
+Unified Meta Discovery Vertical Slice
+
+- Canonical `ravehunter.domain.Event` service boundary
+- Explicit Shotgun and Instagram compatibility adapters
+- Official read-only Meta media collection with pagination and bounded retries
+- Normalized classification (`label`, `confidence`, evidence-based `reason`)
+- Validation, duplicate prevention, canonical SQLite persistence, and city query
+- Deterministic MockProvider vertical-slice tests
+
+---
+
 # v0.4.0
 
 Promoter Registry

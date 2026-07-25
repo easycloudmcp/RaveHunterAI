@@ -47,7 +47,7 @@ feature/ai-enrichment-pipeline
 
 Current Sprint
 
-Sprint 0.9 — AI Provider Layer (`v0.3.0-alpha`)
+Sprint 1.0 — Unified Meta Discovery Vertical Slice
 
 Latest Stable Release
 
@@ -266,9 +266,26 @@ Sprint 0.9
 
 Sprint 1.0
 
-- Unified discovery engine
-- Dashboard
-- Calendar Export
+- Official read-only Meta Graph API collector
+- Normalized source record and canonical event pipeline
+- Canonical SQLite persistence, deduplication, and query CLI
+
+## Unified discovery CLI
+
+All automated tests use `MockProvider`; no live AI provider is activated. The
+Meta collector reads credentials only from the environment:
+
+```powershell
+$env:META_ACCESS_TOKEN = "..."
+$env:META_IG_ACCOUNT_IDS = "1784...,1784..."
+$env:RAVEHUNTER_DATABASE = "data/ravehunter.db"
+python -m ravehunter.cli collect meta --max-pages 2
+python -m ravehunter.cli collect shotgun
+python -m ravehunter.cli events list --city "München"
+python -m ravehunter.cli events show EVENT_ID
+```
+
+See `docs/meta-connector.md` for configuration and operational constraints.
 
 ---
 

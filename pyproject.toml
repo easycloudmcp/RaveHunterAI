@@ -18,10 +18,38 @@ dependencies = [
 [project.optional-dependencies]
 test = [
     "pytest==9.1.1",
+    "build==1.5.0",
+    "mypy==2.3.0",
+    "ruff==0.16.0",
 ]
 
 [project.scripts]
 ravehunter = "main:startup"
+
+[tool.ruff]
+line-length = 88
+extend-exclude = [
+    "collectors",
+    "database/Delete_models.py",
+    "models",
+    "repositories/instagram_repository.py",
+    "services",
+    "tests/instagram",
+    "tests/test_classify_prompt.py",
+    "tests/test_event.py",
+    "tests/test_extract_prompt.py",
+    "tests/test_packaging.py",
+    "tests/test_system_prompt.py",
+]
+
+[tool.ruff.lint]
+ignore = ["FLY002", "RUF012"]
+
+[tool.mypy]
+python_version = "3.11"
+packages = ["ravehunter"]
+ignore_missing_imports = true
+follow_imports = "skip"
 
 [tool.setuptools]
 py-modules = ["main"]
