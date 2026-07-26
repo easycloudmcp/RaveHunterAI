@@ -11,6 +11,7 @@ from ravehunter.collectors.meta import (
     MetaGraphClient,
     MetaMalformedResponseError,
     MetaRateLimitError,
+    MetaURLPolicyError,
 )
 from ravehunter.discovery.artifacts import LocalRawArtifactStorage
 
@@ -29,7 +30,7 @@ def config(**changes):
     return MetaConfig(**values)
 
 
-def test_meta_pagination_and_media_fields():
+def test_meta_pagination_and_media_fields(tmp_path):
     calls = []
 
     def transport(url, timeout):
@@ -47,15 +48,109 @@ def test_meta_pagination_and_media_fields():
                             "timestamp": "2026-08-15T20:00:00Z",
                         }
                     ],
-                    "paging": {"next": "https://fixture/page-2"},
+                    "paging": {"next": "https://graph.facebook.com/page-2"},
                 }
             )
         return response({"data": [{"id": "2"}]})
 
-    records = MetaGraphClient(config(), transport=transport).collect(max_pages=2)
+    records = MetaGraphClient(
+        config(),
+        transport=transport,
+        artifact_storage=LocalRawArtifactStorage(tmp_path),
+    ).collect(max_pages=2)
     assert [record.external_id for record in records] == ["1", "2"]
     assert records[0].media_type == "IMAGE"
     assert len(calls) == 2
+
+
+def test_relative_pagination_stays_on_approved_origin(tmp_path):
+    calls = []
+
+    def transport(url, timeout):
+        calls.append(url)
+        if len(calls) == 1:
+            return response({"data": [], "paging": {"next": "/v23.0/page-2"}})
+        return response({"data": []})
+
+    client = MetaGraphClient(
+        config(),
+        transport=transport,
+        artifact_storage=LocalRawArtifactStorage(tmp_path),
+    )
+    client.collect(max_pages=2)
+    assert calls[1] == "https://graph.facebook.com/v23.0/page-2"
+
+
+@pytest.mark.parametrize(
+    "hostile_url",
+    [
+        "http://graph.facebook.com/page-2",
+        "https://localhost/page-2",
+        "https://127.0.0.1/page-2",
+        "https://[::1]/page-2",
+        "https://10.1.2.3/page-2",
+        "https://172.16.0.1/page-2",
+        "https://192.168.1.1/page-2",
+        "https://169.254.169.254/latest/meta-data",
+        "https://example.com/page-2",
+        "https://graph.facebook.com.evil.example/page-2",
+        "https://graph.facebook.com@evil.example/page-2",
+        "https://evil-graph.facebook.com/page-2",
+        "https://graph.facebook.com:8443/page-2",
+        "https://[invalid/page-2",
+    ],
+)
+def test_hostile_pagination_is_rejected_without_request(hostile_url, tmp_path):
+    calls = []
+
+    def transport(url, timeout):
+        calls.append(url)
+        return response({"data": [], "paging": {"next": hostile_url}})
+
+    client = MetaGraphClient(
+        config(),
+        transport=transport,
+        artifact_storage=LocalRawArtifactStorage(tmp_path),
+    )
+    with pytest.raises(MetaURLPolicyError, match="approved origin"):
+        client.collect(max_pages=2)
+    assert len(calls) == 1
+
+
+def test_redirect_destination_uses_same_origin_policy(tmp_path):
+    calls = []
+
+    def transport(url, timeout):
+        calls.append(url)
+        return 302, b"", {"Location": "https://169.254.169.254/latest/meta-data"}
+
+    client = MetaGraphClient(
+        config(),
+        transport=transport,
+        artifact_storage=LocalRawArtifactStorage(tmp_path),
+    )
+    with pytest.raises(MetaURLPolicyError, match="approved origin") as caught:
+        client.collect()
+    assert len(calls) == 1
+    assert "secret-token" not in str(caught.value)
+
+
+def test_safe_redirect_is_followed(tmp_path):
+    calls = []
+
+    def transport(url, timeout):
+        calls.append(url)
+        if len(calls) == 1:
+            return 302, b"", {"Location": "/v23.0/redirected"}
+        return response({"data": []})
+
+    client = MetaGraphClient(
+        config(),
+        transport=transport,
+        artifact_storage=LocalRawArtifactStorage(tmp_path),
+    )
+    assert client.collect() == []
+    assert calls[1] == "https://graph.facebook.com/v23.0/redirected"
 
 
 def test_empty_response():
@@ -70,17 +165,13 @@ def test_empty_response():
     [{"data": {}}, {"data": [None]}, {"data": [{"caption": "missing id"}]}],
 )
 def test_malformed_response(payload):
-    client = MetaGraphClient(
-        config(), transport=lambda url, timeout: response(payload)
-    )
+    client = MetaGraphClient(config(), transport=lambda url, timeout: response(payload))
     with pytest.raises(MetaMalformedResponseError):
         client.collect()
 
 
 def test_invalid_json():
-    client = MetaGraphClient(
-        config(), transport=lambda url, timeout: (200, b"{", {})
-    )
+    client = MetaGraphClient(config(), transport=lambda url, timeout: (200, b"{", {}))
     with pytest.raises(MetaMalformedResponseError):
         client.collect()
 
@@ -100,9 +191,7 @@ def test_rate_limit_retries_then_succeeds():
 
     def transport(url, timeout):
         status = next(statuses)
-        return response(
-            {"data": []}, status=status, headers={"Retry-After": "0.25"}
-        )
+        return response({"data": []}, status=status, headers={"Retry-After": "0.25"})
 
     client = MetaGraphClient(config(), transport=transport, sleeper=sleeps.append)
     assert client.collect() == []
