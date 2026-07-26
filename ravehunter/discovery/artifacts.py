@@ -74,6 +74,67 @@ class LocalRawArtifactStorage(RawArtifactStorage):
     def _before_publish(self, target: Path) -> None:
         """Deterministic test hook immediately before publication."""
 
+    def _open_root_guard(self) -> tuple[int | None, int | None]:
+        """Anchor POSIX operations or prevent Windows root rename/delete."""
+
+        if os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+
+            create_file = ctypes.windll.kernel32.CreateFileW  # type: ignore[attr-defined]
+            create_file.argtypes = (
+                wintypes.LPCWSTR,
+                wintypes.DWORD,
+                wintypes.DWORD,
+                wintypes.LPVOID,
+                wintypes.DWORD,
+                wintypes.DWORD,
+                wintypes.HANDLE,
+            )
+            create_file.restype = wintypes.HANDLE
+            handle = create_file(
+                str(self.root),
+                0,  # Metadata-only directory handle.
+                0x00000001 | 0x00000002,  # FILE_SHARE_READ | FILE_SHARE_WRITE
+                None,
+                3,  # OPEN_EXISTING
+                0x02000000,  # FILE_FLAG_BACKUP_SEMANTICS
+                None,
+            )
+            invalid_handle = ctypes.c_void_p(-1).value
+            if handle in {-1, invalid_handle}:
+                raise RuntimeError("Raw evidence root could not be guarded.")
+            return None, int(handle)
+
+        flags = os.O_RDONLY
+        flags |= getattr(os, "O_DIRECTORY", 0)
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(self.root, flags)
+        opened_stat = os.fstat(descriptor)
+        if (
+            not stat.S_ISDIR(opened_stat.st_mode)
+            or (opened_stat.st_dev, opened_stat.st_ino) != self._root_identity
+        ):
+            os.close(descriptor)
+            raise RuntimeError("Raw evidence root identity changed.")
+        return descriptor, None
+
+    @staticmethod
+    def _close_root_guard(
+        root_descriptor: int | None, windows_handle: int | None
+    ) -> None:
+        if root_descriptor is not None:
+            os.close(root_descriptor)
+        if windows_handle is not None:
+            import ctypes
+            from ctypes import wintypes
+
+            close_handle = ctypes.windll.kernel32.CloseHandle  # type: ignore[attr-defined]
+            close_handle.argtypes = (wintypes.HANDLE,)
+            close_handle.restype = wintypes.BOOL
+            if not close_handle(windows_handle):
+                raise RuntimeError("Raw evidence root guard could not be closed.")
+
     @staticmethod
     def _read_existing(target: Path) -> bytes:
         try:
@@ -133,9 +194,9 @@ class LocalRawArtifactStorage(RawArtifactStorage):
         target = self._target_path(account_id, media_id, digest)
         temporary_path: Path | None = None
         root_descriptor: int | None = None
+        windows_root_handle: int | None = None
         try:
-            if os.open in os.supports_dir_fd:
-                root_descriptor = os.open(self.root, os.O_RDONLY)
+            root_descriptor, windows_root_handle = self._open_root_guard()
             with tempfile.NamedTemporaryFile(
                 mode="wb",
                 dir=target.parent,
@@ -150,13 +211,13 @@ class LocalRawArtifactStorage(RawArtifactStorage):
                 try:
                     self._before_publish(target)
                 except OSError as error:
-                    # Windows prevents renaming a directory containing this open
-                    # temporary file. Normalize that safe rejection with the
-                    # post-hook identity check used on POSIX.
+                    # The Windows directory guard denies root rename/delete.
+                    # Normalize that safe rejection with the post-hook identity
+                    # check used when POSIX permits the rename attempt.
                     raise RuntimeError("Raw evidence root identity changed.") from error
                 self._verify_root()
                 try:
-                    if root_descriptor is not None and os.link in os.supports_dir_fd:
+                    if root_descriptor is not None:
                         os.link(
                             temporary_path.name,
                             target.name,
@@ -171,16 +232,17 @@ class LocalRawArtifactStorage(RawArtifactStorage):
                             "Immutable raw evidence conflicts with existing content."
                         )
         finally:
-            if temporary_path is not None:
-                if root_descriptor is not None and os.unlink in os.supports_dir_fd:
-                    try:
-                        os.unlink(temporary_path.name, dir_fd=root_descriptor)
-                    except FileNotFoundError:
-                        pass
-                else:
-                    temporary_path.unlink(missing_ok=True)
-            if root_descriptor is not None:
-                os.close(root_descriptor)
+            try:
+                if temporary_path is not None:
+                    if root_descriptor is not None:
+                        try:
+                            os.unlink(temporary_path.name, dir_fd=root_descriptor)
+                        except FileNotFoundError:
+                            pass
+                    else:
+                        temporary_path.unlink(missing_ok=True)
+            finally:
+                self._close_root_guard(root_descriptor, windows_root_handle)
         return RawArtifact(
             reference=target.as_uri(),
             content_hash=digest,
