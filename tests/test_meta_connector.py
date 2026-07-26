@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 from datetime import UTC, datetime
@@ -274,6 +275,99 @@ def test_raw_artifact_storage_redacts_credentials(tmp_path):
     assert artifact.reference.startswith("file:")
     assert "secret-token" not in stored
     assert "<redacted>" in stored
+
+
+@pytest.mark.parametrize(
+    ("account_id", "media_id"),
+    [
+        ("..", "../outside"),
+        ("../../outside", "nested/media"),
+        ("/absolute/account", "/absolute/media"),
+        (r"C:\Windows", r"D:\outside\media"),
+        (r"\\server\share", r"\\server\outside"),
+        ("account:stream", "media:stream"),
+        ("%2e%2e%2foutside", "%2fetc%2fpasswd"),
+        (" leading and trailing ", " .. "),
+        ("...", "."),
+        ("a" * 10_000, "m" * 10_000),
+        ("ｅｖｅｎｔ/../雪", "🎵／..／outside"),
+    ],
+)
+def test_remote_identifiers_never_become_path_components(
+    tmp_path, account_id, media_id
+):
+    evidence_root = tmp_path / "evidence"
+    storage = LocalRawArtifactStorage(evidence_root)
+    artifact = storage.store(
+        account_id=account_id,
+        media_id=media_id,
+        payload={"caption": "safe"},
+        collected_at=datetime.now(UTC),
+    )
+
+    target = next(evidence_root.rglob("*.json"))
+    assert artifact.reference == target.as_uri()
+    target.relative_to(evidence_root.resolve())
+    assert target.parent.name == hashlib.sha256(account_id.encode()).hexdigest()
+    assert target.name == hashlib.sha256(media_id.encode()).hexdigest() + ".json"
+    document = json.loads(target.read_text(encoding="utf-8"))
+    assert document["account_id"] == account_id
+    assert document["media_id"] == media_id
+    assert list(tmp_path.glob("outside*")) == []
+
+
+def test_raw_evidence_paths_are_deterministic_and_distinct(tmp_path):
+    storage = LocalRawArtifactStorage(tmp_path)
+    collected_at = datetime.now(UTC)
+
+    first = storage.store(
+        account_id="same-account",
+        media_id="same-media",
+        payload={"caption": "first"},
+        collected_at=collected_at,
+    )
+    repeated = storage.store(
+        account_id="same-account",
+        media_id="same-media",
+        payload={"caption": "second"},
+        collected_at=collected_at,
+    )
+    different = storage.store(
+        account_id="same-account",
+        media_id="different-media",
+        payload={"caption": "different"},
+        collected_at=collected_at,
+    )
+
+    assert first.reference == repeated.reference
+    assert first.reference != different.reference
+    repeated_path = next(
+        tmp_path.rglob(hashlib.sha256(b"same-media").hexdigest() + ".json")
+    )
+    assert (
+        json.loads(repeated_path.read_text(encoding="utf-8"))["payload"]["caption"]
+        == "second"
+    )
+
+
+def test_raw_evidence_rejects_symlink_escape(tmp_path):
+    evidence_root = tmp_path / "evidence"
+    outside = tmp_path / "outside"
+    evidence_root.mkdir()
+    outside.mkdir()
+    account_id = "hostile-account"
+    account_hash = hashlib.sha256(account_id.encode()).hexdigest()
+    (evidence_root / account_hash).symlink_to(outside, target_is_directory=True)
+    storage = LocalRawArtifactStorage(evidence_root)
+
+    with pytest.raises(RuntimeError, match="escaped"):
+        storage.store(
+            account_id=account_id,
+            media_id="media",
+            payload={"caption": "safe"},
+            collected_at=datetime.now(UTC),
+        )
+    assert list(outside.iterdir()) == []
 
 
 def test_required_environment_configuration(monkeypatch):

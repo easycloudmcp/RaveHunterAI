@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import tempfile
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -33,7 +35,28 @@ class RawArtifactStorage(ABC):
 
 class LocalRawArtifactStorage(RawArtifactStorage):
     def __init__(self, root: str | Path) -> None:
-        self.root = Path(root)
+        self.root = Path(root).resolve()
+
+    def _contained_path(self, account_id: str, media_id: str) -> Path:
+        account_hash = hashlib.sha256(account_id.encode("utf-8")).hexdigest()
+        media_hash = hashlib.sha256(media_id.encode("utf-8")).hexdigest()
+        account_directory = self.root / account_hash
+        account_directory.mkdir(parents=True, exist_ok=True)
+        resolved_directory = account_directory.resolve()
+        try:
+            resolved_directory.relative_to(self.root)
+        except ValueError as error:
+            raise RuntimeError(
+                "Raw evidence path escaped its configured root."
+            ) from error
+        target = resolved_directory / f"{media_hash}.json"
+        try:
+            target.relative_to(self.root)
+        except ValueError as error:
+            raise RuntimeError(
+                "Raw evidence path escaped its configured root."
+            ) from error
+        return target
 
     def store(
         self,
@@ -54,11 +77,26 @@ class LocalRawArtifactStorage(RawArtifactStorage):
             document, ensure_ascii=False, sort_keys=True, separators=(",", ":")
         ).encode("utf-8")
         digest = hashlib.sha256(encoded).hexdigest()
-        target = self.root / account_id / f"{media_id}-{digest[:12]}.json"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(encoded)
+        target = self._contained_path(account_id, media_id)
+        temporary_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=target.parent,
+                prefix=".raw-evidence-",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary:
+                temporary.write(encoded)
+                temporary.flush()
+                os.fsync(temporary.fileno())
+                temporary_path = Path(temporary.name)
+            temporary_path.replace(target)
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
         return RawArtifact(
-            reference=target.resolve().as_uri(),
+            reference=target.as_uri(),
             content_hash=digest,
             collected_at=collected_at,
         )
