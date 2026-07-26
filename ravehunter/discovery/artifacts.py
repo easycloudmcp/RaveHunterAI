@@ -37,25 +37,39 @@ class LocalRawArtifactStorage(RawArtifactStorage):
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root).resolve()
 
-    def _contained_path(self, account_id: str, media_id: str) -> Path:
+    def _contained_path(
+        self, account_id: str, media_id: str, content_hash: str
+    ) -> Path:
         account_hash = hashlib.sha256(account_id.encode("utf-8")).hexdigest()
         media_hash = hashlib.sha256(media_id.encode("utf-8")).hexdigest()
         account_directory = self.root / account_hash
         account_directory.mkdir(parents=True, exist_ok=True)
-        resolved_directory = account_directory.resolve()
+        resolved_account_directory = account_directory.resolve()
         try:
-            resolved_directory.relative_to(self.root)
+            resolved_account_directory.relative_to(self.root)
         except ValueError as error:
             raise RuntimeError(
                 "Raw evidence path escaped its configured root."
             ) from error
-        target = resolved_directory / f"{media_hash}.json"
+
+        media_directory = resolved_account_directory / media_hash
+        media_directory.mkdir(exist_ok=True)
+        resolved_media_directory = media_directory.resolve()
         try:
-            target.relative_to(self.root)
+            resolved_media_directory.relative_to(self.root)
         except ValueError as error:
             raise RuntimeError(
                 "Raw evidence path escaped its configured root."
             ) from error
+        target = resolved_media_directory / f"{content_hash}.json"
+        try:
+            target.resolve(strict=False).relative_to(self.root)
+        except ValueError as error:
+            raise RuntimeError(
+                "Raw evidence path escaped its configured root."
+            ) from error
+        if target.is_symlink():
+            raise RuntimeError("Raw evidence target must not be a symlink.")
         return target
 
     def store(
@@ -77,7 +91,7 @@ class LocalRawArtifactStorage(RawArtifactStorage):
             document, ensure_ascii=False, sort_keys=True, separators=(",", ":")
         ).encode("utf-8")
         digest = hashlib.sha256(encoded).hexdigest()
-        target = self._contained_path(account_id, media_id)
+        target = self._contained_path(account_id, media_id, digest)
         temporary_path: Path | None = None
         try:
             with tempfile.NamedTemporaryFile(
@@ -91,7 +105,13 @@ class LocalRawArtifactStorage(RawArtifactStorage):
                 temporary.flush()
                 os.fsync(temporary.fileno())
                 temporary_path = Path(temporary.name)
-            temporary_path.replace(target)
+            try:
+                os.link(temporary_path, target)
+            except FileExistsError:
+                if target.read_bytes() != encoded:
+                    raise RuntimeError(
+                        "Immutable raw evidence conflicts with existing content."
+                    )
         finally:
             if temporary_path is not None:
                 temporary_path.unlink(missing_ok=True)

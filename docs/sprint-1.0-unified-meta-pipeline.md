@@ -16,6 +16,9 @@ no Meta, cloud-AI, or local live-AI calls.
 
 Local evidence defaults to `data/raw-evidence/meta`. The storage contract is
 provider-neutral so a future Antoris OS integration can supply S3-compatible
-storage without changing the connector or pipeline. Evidence retention follows
-the operator's filesystem retention policy; authorization headers and access
-tokens are recursively redacted and are never persisted.
+storage without changing the connector or pipeline. Evidence is retained as
+immutable, content-addressed JSON: recollecting changed media creates a new
+artifact without replacing prior evidence, while an identical replay reuses the
+same reference. Deletion follows the operator's filesystem retention policy.
+Authorization headers and access tokens are recursively redacted and are never
+persisted.

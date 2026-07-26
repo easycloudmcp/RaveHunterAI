@@ -9,7 +9,8 @@ Last updated: 25 July 2026.
 - Added the read-only, paginated Meta Graph connector for explicitly configured
   Instagram Professional account IDs.
 - Added typed Meta source records and provider-neutral raw-artifact storage with
-  a token-redacting local filesystem adapter.
+  a token-redacting, content-addressed local filesystem adapter that retains
+  changed evidence immutably.
 - Added the canonical classification, extraction, validation, deduplication,
   SQLite persistence, city query, and CLI vertical slice.
 - Kept legacy Shotgun and browser-based Instagram models behind explicit

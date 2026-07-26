@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 
 import pytest
@@ -308,15 +309,16 @@ def test_remote_identifiers_never_become_path_components(
     target = next(evidence_root.rglob("*.json"))
     assert artifact.reference == target.as_uri()
     target.relative_to(evidence_root.resolve())
-    assert target.parent.name == hashlib.sha256(account_id.encode()).hexdigest()
-    assert target.name == hashlib.sha256(media_id.encode()).hexdigest() + ".json"
+    assert target.parent.parent.name == hashlib.sha256(account_id.encode()).hexdigest()
+    assert target.parent.name == hashlib.sha256(media_id.encode()).hexdigest()
+    assert target.name == artifact.content_hash + ".json"
     document = json.loads(target.read_text(encoding="utf-8"))
     assert document["account_id"] == account_id
     assert document["media_id"] == media_id
     assert list(tmp_path.glob("outside*")) == []
 
 
-def test_raw_evidence_paths_are_deterministic_and_distinct(tmp_path):
+def test_raw_evidence_is_content_addressed_and_immutable(tmp_path):
     storage = LocalRawArtifactStorage(tmp_path)
     collected_at = datetime.now(UTC)
 
@@ -329,10 +331,16 @@ def test_raw_evidence_paths_are_deterministic_and_distinct(tmp_path):
     repeated = storage.store(
         account_id="same-account",
         media_id="same-media",
+        payload={"caption": "first"},
+        collected_at=collected_at,
+    )
+    changed = storage.store(
+        account_id="same-account",
+        media_id="same-media",
         payload={"caption": "second"},
         collected_at=collected_at,
     )
-    different = storage.store(
+    different_media = storage.store(
         account_id="same-account",
         media_id="different-media",
         payload={"caption": "different"},
@@ -340,14 +348,61 @@ def test_raw_evidence_paths_are_deterministic_and_distinct(tmp_path):
     )
 
     assert first.reference == repeated.reference
-    assert first.reference != different.reference
-    repeated_path = next(
-        tmp_path.rglob(hashlib.sha256(b"same-media").hexdigest() + ".json")
+    assert first.reference != changed.reference
+    assert first.reference != different_media.reference
+    first_path = next(tmp_path.rglob(first.content_hash + ".json"))
+    changed_path = next(tmp_path.rglob(changed.content_hash + ".json"))
+    assert (
+        json.loads(first_path.read_text(encoding="utf-8"))["payload"]["caption"]
+        == "first"
     )
     assert (
-        json.loads(repeated_path.read_text(encoding="utf-8"))["payload"]["caption"]
+        json.loads(changed_path.read_text(encoding="utf-8"))["payload"]["caption"]
         == "second"
     )
+    assert len(list(tmp_path.rglob("*.json"))) == 3
+
+
+def test_raw_evidence_never_replaces_an_existing_target(tmp_path):
+    storage = LocalRawArtifactStorage(tmp_path)
+    collected_at = datetime.now(UTC)
+    artifact = storage.store(
+        account_id="same-account",
+        media_id="same-media",
+        payload={"caption": "original"},
+        collected_at=collected_at,
+    )
+    target = next(tmp_path.rglob(artifact.content_hash + ".json"))
+    target.write_text("pre-existing-content", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="Immutable raw evidence conflicts"):
+        storage.store(
+            account_id="same-account",
+            media_id="same-media",
+            payload={"caption": "original"},
+            collected_at=collected_at,
+        )
+
+    assert target.read_text(encoding="utf-8") == "pre-existing-content"
+
+
+def test_concurrent_identical_evidence_publishes_once(tmp_path):
+    storage = LocalRawArtifactStorage(tmp_path)
+    collected_at = datetime.now(UTC)
+
+    def store_evidence(_index):
+        return storage.store(
+            account_id="same-account",
+            media_id="same-media",
+            payload={"caption": "same"},
+            collected_at=collected_at,
+        )
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        artifacts = list(pool.map(store_evidence, range(8)))
+
+    assert len({artifact.reference for artifact in artifacts}) == 1
+    assert len(list(tmp_path.rglob("*.json"))) == 1
 
 
 def test_raw_evidence_rejects_symlink_escape(tmp_path):
