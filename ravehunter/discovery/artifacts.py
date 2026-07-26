@@ -76,6 +76,15 @@ class LocalRawArtifactStorage(RawArtifactStorage):
 
     @staticmethod
     def _read_existing(target: Path) -> bytes:
+        try:
+            path_stat = target.lstat()
+        except OSError as error:
+            raise RuntimeError(
+                "Immutable raw evidence target is not a readable regular file."
+            ) from error
+        if stat.S_ISLNK(path_stat.st_mode) or not stat.S_ISREG(path_stat.st_mode):
+            raise RuntimeError("Immutable raw evidence target must be a regular file.")
+
         flags = os.O_RDONLY
         flags |= getattr(os, "O_NOFOLLOW", 0)
         try:
@@ -90,10 +99,10 @@ class LocalRawArtifactStorage(RawArtifactStorage):
                 raise RuntimeError(
                     "Immutable raw evidence target must be a regular file."
                 )
-            path_stat = target.lstat()
-            if stat.S_ISLNK(path_stat.st_mode) or (
-                path_stat.st_dev,
-                path_stat.st_ino,
+            current_path_stat = target.lstat()
+            if stat.S_ISLNK(current_path_stat.st_mode) or (
+                current_path_stat.st_dev,
+                current_path_stat.st_ino,
             ) != (opened_stat.st_dev, opened_stat.st_ino):
                 raise RuntimeError("Immutable raw evidence target identity changed.")
             with os.fdopen(descriptor, "rb", closefd=False) as existing:
@@ -138,23 +147,29 @@ class LocalRawArtifactStorage(RawArtifactStorage):
                 temporary.flush()
                 os.fsync(temporary.fileno())
                 temporary_path = Path(temporary.name)
-            self._before_publish(target)
-            self._verify_root()
-            try:
-                if root_descriptor is not None and os.link in os.supports_dir_fd:
-                    os.link(
-                        temporary_path.name,
-                        target.name,
-                        src_dir_fd=root_descriptor,
-                        dst_dir_fd=root_descriptor,
-                    )
-                else:
-                    os.link(temporary_path, target)
-            except FileExistsError:
-                if self._read_existing(target) != encoded:
-                    raise RuntimeError(
-                        "Immutable raw evidence conflicts with existing content."
-                    )
+                try:
+                    self._before_publish(target)
+                except OSError as error:
+                    # Windows prevents renaming a directory containing this open
+                    # temporary file. Normalize that safe rejection with the
+                    # post-hook identity check used on POSIX.
+                    raise RuntimeError("Raw evidence root identity changed.") from error
+                self._verify_root()
+                try:
+                    if root_descriptor is not None and os.link in os.supports_dir_fd:
+                        os.link(
+                            temporary_path.name,
+                            target.name,
+                            src_dir_fd=root_descriptor,
+                            dst_dir_fd=root_descriptor,
+                        )
+                    else:
+                        os.link(temporary_path, target)
+                except FileExistsError:
+                    if self._read_existing(target) != encoded:
+                        raise RuntimeError(
+                            "Immutable raw evidence conflicts with existing content."
+                        )
         finally:
             if temporary_path is not None:
                 if root_descriptor is not None and os.unlink in os.supports_dir_fd:
