@@ -4,6 +4,18 @@ Project history and engineering milestones.
 
 Last updated: 25 July 2026.
 
+## 0.4.0-alpha — Sprint 1.0
+
+- Added the read-only, paginated Meta Graph connector for explicitly configured
+  Instagram Professional account IDs.
+- Added typed Meta source records and provider-neutral raw-artifact storage with
+  a token-redacting, content-addressed local filesystem adapter that retains
+  changed evidence immutably.
+- Added the canonical classification, extraction, validation, deduplication,
+  SQLite persistence, city query, and CLI vertical slice.
+- Kept legacy Shotgun and browser-based Instagram models behind explicit
+  compatibility adapters.
+
 ## Unreleased — Sprint 0.9
 
 ### Goal

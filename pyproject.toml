@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ravehunter-ai"
-version = "0.3.0a0"
+version = "0.4.0a0"
 description = "Local-first event discovery and intelligence prototype"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -18,10 +18,38 @@ dependencies = [
 [project.optional-dependencies]
 test = [
     "pytest==9.1.1",
+    "build==1.5.0",
+    "mypy==2.3.0",
+    "ruff==0.16.0",
 ]
 
 [project.scripts]
-ravehunter = "main:startup"
+ravehunter = "ravehunter.cli:main"
+
+[tool.ruff]
+line-length = 88
+extend-exclude = [
+    "collectors",
+    "database/Delete_models.py",
+    "models",
+    "repositories/instagram_repository.py",
+    "services",
+    "tests/instagram",
+    "tests/test_classify_prompt.py",
+    "tests/test_event.py",
+    "tests/test_extract_prompt.py",
+    "tests/test_packaging.py",
+    "tests/test_system_prompt.py",
+]
+
+[tool.ruff.lint]
+ignore = ["FLY002", "RUF012"]
+
+[tool.mypy]
+python_version = "3.11"
+packages = ["ravehunter"]
+ignore_missing_imports = true
+follow_imports = "skip"
 
 [tool.setuptools]
 py-modules = ["main"]

@@ -48,8 +48,55 @@ def create_tables(connection: sqlite3.Connection) -> None:
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(instagram_post_id) REFERENCES instagram_posts(id)
         );
+
+        CREATE TABLE IF NOT EXISTS canonical_events (
+            id TEXT PRIMARY KEY,
+            source TEXT NOT NULL,
+            external_id TEXT,
+            raw_source_id TEXT,
+            raw_evidence_refs TEXT NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            venue_id TEXT NOT NULL,
+            venue_name TEXT NOT NULL,
+            city TEXT,
+            country TEXT,
+            starts_at TEXT NOT NULL,
+            ends_at TEXT,
+            pricing TEXT NOT NULL,
+            promoter TEXT,
+            music_metadata TEXT NOT NULL,
+            media_metadata TEXT NOT NULL,
+            source_urls TEXT NOT NULL,
+            classification_label TEXT NOT NULL,
+            confidence REAL NOT NULL CHECK(confidence >= 0 AND confidence <= 1),
+            classification_reason TEXT NOT NULL,
+            duplicate_key TEXT NOT NULL UNIQUE,
+            processing_state TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(source, external_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_canonical_events_city
+            ON canonical_events(city);
         """
     )
+    existing_columns = {
+        row[1]
+        for row in connection.execute("PRAGMA table_info(canonical_events)")
+    }
+    migrations = {
+        "pricing": "TEXT NOT NULL DEFAULT '{}'",
+        "promoter": "TEXT",
+        "music_metadata": "TEXT NOT NULL DEFAULT '{}'",
+        "media_metadata": "TEXT NOT NULL DEFAULT '{}'",
+        "processing_state": "TEXT NOT NULL DEFAULT 'discovered'",
+    }
+    for column, definition in migrations.items():
+        if column not in existing_columns:
+            connection.execute(
+                f"ALTER TABLE canonical_events ADD COLUMN {column} {definition}"
+            )
     connection.commit()
 
 
