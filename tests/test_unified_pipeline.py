@@ -7,7 +7,7 @@ from database.database import create_tables
 from ravehunter.ai.mock_provider import MockProvider
 from ravehunter.discovery.pipeline import DiscoveryPipeline
 from ravehunter.discovery.source import NormalizedSourceRecord
-from ravehunter.domain.enums import EventSource
+from ravehunter.domain.enums import EventSource, EventStatus
 from ravehunter.domain.event import Event
 from repositories.event_repository import EventRepository
 
@@ -102,3 +102,61 @@ def test_non_event_is_not_extracted(repository):
 def test_repository_rejects_invalid_event(repository):
     with pytest.raises(ValueError, match="Missing venue"):
         repository.insert(Event(title="No venue"))
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        EventStatus.DISCOVERED,
+        EventStatus.VALIDATED,
+        EventStatus.PUBLISHED,
+        EventStatus.ARCHIVED,
+        EventStatus.CANCELLED,
+    ],
+)
+def test_repository_round_trip_preserves_canonical_event(repository, status):
+    event = replace(
+        MockProvider().extract_event(f"{status.value} event"),
+        status=status,
+        external_id=f"external-{status.value}",
+        raw_source_id=f"raw-{status.value}",
+        raw_evidence_refs=[
+            f"file:///evidence/{status.value}-one.json",
+            f"file:///evidence/{status.value}-two.json",
+        ],
+    )
+    expected_duplicate_key = event.duplicate_key
+
+    assert repository.insert(event) is True
+    assert repository.insert(event) is False
+
+    loaded_by_id = repository.get(str(event.id))
+    loaded_by_list = next(
+        listed for listed in repository.list() if listed.id == event.id
+    )
+    for loaded in (loaded_by_id, loaded_by_list):
+        assert loaded is not None
+        assert loaded.status is status
+        assert loaded.id == event.id
+        assert loaded.source is event.source
+        assert loaded.external_id == event.external_id
+        assert loaded.raw_source_id == event.raw_source_id
+        assert loaded.raw_evidence_refs == event.raw_evidence_refs
+        assert loaded.created == event.created
+        assert loaded.updated == event.updated
+        assert loaded.duplicate_key == expected_duplicate_key
+
+
+def test_repository_rejects_unknown_persisted_status(repository):
+    event = MockProvider().extract_event("Malformed status event")
+    assert repository.insert(event) is True
+    repository.connection.execute(
+        "UPDATE canonical_events SET processing_state = ? WHERE id = ?",
+        ("unknown-status", str(event.id)),
+    )
+    repository.connection.commit()
+
+    with pytest.raises(ValueError, match="unknown-status"):
+        repository.get(str(event.id))
+    with pytest.raises(ValueError, match="unknown-status"):
+        repository.list()

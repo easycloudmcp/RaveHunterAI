@@ -9,7 +9,7 @@ from uuid import UUID
 
 from models.event import Event as LegacyEvent
 from ravehunter.domain.confidence import Confidence
-from ravehunter.domain.enums import EventSource
+from ravehunter.domain.enums import EventSource, EventStatus
 from ravehunter.domain.event import Event
 from ravehunter.domain.location import Location
 from ravehunter.domain.media import Media
@@ -155,6 +155,8 @@ class EventRepository:
 
     @staticmethod
     def _from_row(row: sqlite3.Row) -> Event:
+        """Rehydrate a canonical event, raising ValueError on invalid enum data."""
+
         return Event(
             id=UUID(row["id"]),
             source=EventSource(row["source"]),
@@ -180,6 +182,7 @@ class EventRepository:
             media=Media(**json.loads(row["media_metadata"])),
             classification_label=row["classification_label"],
             classification_reason=row["classification_reason"],
+            status=EventStatus(row["processing_state"]),
             confidence=Confidence(
                 value=row["confidence"],
                 reason=row["classification_reason"],
