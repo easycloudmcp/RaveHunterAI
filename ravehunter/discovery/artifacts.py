@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 import tempfile
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -34,43 +35,71 @@ class RawArtifactStorage(ABC):
 
 
 class LocalRawArtifactStorage(RawArtifactStorage):
-    def __init__(self, root: str | Path) -> None:
-        self.root = Path(root).resolve()
+    """Write-once local evidence storage.
 
-    def _contained_path(
-        self, account_id: str, media_id: str, content_hash: str
-    ) -> Path:
+    The configured root and its parent are trusted configuration. Publication
+    does not follow target symlinks and detects replacement of the root itself,
+    but it cannot defend against a filesystem administrator replacing the
+    root's parent or altering files through privileges outside this process.
+    """
+
+    def __init__(self, root: str | Path) -> None:
+        configured_root = Path(root)
+        if configured_root.is_symlink():
+            raise RuntimeError("Raw evidence root must not be a symlink.")
+        configured_root.mkdir(parents=True, exist_ok=True)
+        root_stat = configured_root.lstat()
+        if not stat.S_ISDIR(root_stat.st_mode):
+            raise RuntimeError("Raw evidence root must be a directory.")
+        self.root = configured_root.resolve(strict=True)
+        self._root_identity = (root_stat.st_dev, root_stat.st_ino)
+
+    def _target_path(self, account_id: str, media_id: str, content_hash: str) -> Path:
         account_hash = hashlib.sha256(account_id.encode("utf-8")).hexdigest()
         media_hash = hashlib.sha256(media_id.encode("utf-8")).hexdigest()
-        account_directory = self.root / account_hash
-        account_directory.mkdir(parents=True, exist_ok=True)
-        resolved_account_directory = account_directory.resolve()
-        try:
-            resolved_account_directory.relative_to(self.root)
-        except ValueError as error:
-            raise RuntimeError(
-                "Raw evidence path escaped its configured root."
-            ) from error
+        return self.root / f"{account_hash}-{media_hash}-{content_hash}.json"
 
-        media_directory = resolved_account_directory / media_hash
-        media_directory.mkdir(exist_ok=True)
-        resolved_media_directory = media_directory.resolve()
+    def _verify_root(self) -> None:
         try:
-            resolved_media_directory.relative_to(self.root)
-        except ValueError as error:
-            raise RuntimeError(
-                "Raw evidence path escaped its configured root."
-            ) from error
-        target = resolved_media_directory / f"{content_hash}.json"
+            root_stat = self.root.lstat()
+        except OSError as error:
+            raise RuntimeError("Raw evidence root is unavailable.") from error
+        if (
+            self.root.is_symlink()
+            or not stat.S_ISDIR(root_stat.st_mode)
+            or (root_stat.st_dev, root_stat.st_ino) != self._root_identity
+        ):
+            raise RuntimeError("Raw evidence root identity changed.")
+
+    def _before_publish(self, target: Path) -> None:
+        """Deterministic test hook immediately before publication."""
+
+    @staticmethod
+    def _read_existing(target: Path) -> bytes:
+        flags = os.O_RDONLY
+        flags |= getattr(os, "O_NOFOLLOW", 0)
         try:
-            target.resolve(strict=False).relative_to(self.root)
-        except ValueError as error:
+            descriptor = os.open(target, flags)
+        except OSError as error:
             raise RuntimeError(
-                "Raw evidence path escaped its configured root."
+                "Immutable raw evidence target is not a readable regular file."
             ) from error
-        if target.is_symlink():
-            raise RuntimeError("Raw evidence target must not be a symlink.")
-        return target
+        try:
+            opened_stat = os.fstat(descriptor)
+            if not stat.S_ISREG(opened_stat.st_mode):
+                raise RuntimeError(
+                    "Immutable raw evidence target must be a regular file."
+                )
+            path_stat = target.lstat()
+            if stat.S_ISLNK(path_stat.st_mode) or (
+                path_stat.st_dev,
+                path_stat.st_ino,
+            ) != (opened_stat.st_dev, opened_stat.st_ino):
+                raise RuntimeError("Immutable raw evidence target identity changed.")
+            with os.fdopen(descriptor, "rb", closefd=False) as existing:
+                return existing.read()
+        finally:
+            os.close(descriptor)
 
     def store(
         self,
@@ -91,9 +120,13 @@ class LocalRawArtifactStorage(RawArtifactStorage):
             document, ensure_ascii=False, sort_keys=True, separators=(",", ":")
         ).encode("utf-8")
         digest = hashlib.sha256(encoded).hexdigest()
-        target = self._contained_path(account_id, media_id, digest)
+        self._verify_root()
+        target = self._target_path(account_id, media_id, digest)
         temporary_path: Path | None = None
+        root_descriptor: int | None = None
         try:
+            if os.open in os.supports_dir_fd:
+                root_descriptor = os.open(self.root, os.O_RDONLY)
             with tempfile.NamedTemporaryFile(
                 mode="wb",
                 dir=target.parent,
@@ -105,16 +138,34 @@ class LocalRawArtifactStorage(RawArtifactStorage):
                 temporary.flush()
                 os.fsync(temporary.fileno())
                 temporary_path = Path(temporary.name)
+            self._before_publish(target)
+            self._verify_root()
             try:
-                os.link(temporary_path, target)
+                if root_descriptor is not None and os.link in os.supports_dir_fd:
+                    os.link(
+                        temporary_path.name,
+                        target.name,
+                        src_dir_fd=root_descriptor,
+                        dst_dir_fd=root_descriptor,
+                    )
+                else:
+                    os.link(temporary_path, target)
             except FileExistsError:
-                if target.read_bytes() != encoded:
+                if self._read_existing(target) != encoded:
                     raise RuntimeError(
                         "Immutable raw evidence conflicts with existing content."
                     )
         finally:
             if temporary_path is not None:
-                temporary_path.unlink(missing_ok=True)
+                if root_descriptor is not None and os.unlink in os.supports_dir_fd:
+                    try:
+                        os.unlink(temporary_path.name, dir_fd=root_descriptor)
+                    except FileNotFoundError:
+                        pass
+                else:
+                    temporary_path.unlink(missing_ok=True)
+            if root_descriptor is not None:
+                os.close(root_descriptor)
         return RawArtifact(
             reference=target.as_uri(),
             content_hash=digest,

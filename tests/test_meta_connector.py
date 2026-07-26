@@ -309,9 +309,12 @@ def test_remote_identifiers_never_become_path_components(
     target = next(evidence_root.rglob("*.json"))
     assert artifact.reference == target.as_uri()
     target.relative_to(evidence_root.resolve())
-    assert target.parent.parent.name == hashlib.sha256(account_id.encode()).hexdigest()
-    assert target.parent.name == hashlib.sha256(media_id.encode()).hexdigest()
-    assert target.name == artifact.content_hash + ".json"
+    assert target.parent == evidence_root.resolve()
+    assert target.name == (
+        f"{hashlib.sha256(account_id.encode()).hexdigest()}-"
+        f"{hashlib.sha256(media_id.encode()).hexdigest()}-"
+        f"{artifact.content_hash}.json"
+    )
     document = json.loads(target.read_text(encoding="utf-8"))
     assert document["account_id"] == account_id
     assert document["media_id"] == media_id
@@ -350,8 +353,8 @@ def test_raw_evidence_is_content_addressed_and_immutable(tmp_path):
     assert first.reference == repeated.reference
     assert first.reference != changed.reference
     assert first.reference != different_media.reference
-    first_path = next(tmp_path.rglob(first.content_hash + ".json"))
-    changed_path = next(tmp_path.rglob(changed.content_hash + ".json"))
+    first_path = next(tmp_path.glob(f"*-{first.content_hash}.json"))
+    changed_path = next(tmp_path.glob(f"*-{changed.content_hash}.json"))
     assert (
         json.loads(first_path.read_text(encoding="utf-8"))["payload"]["caption"]
         == "first"
@@ -372,7 +375,7 @@ def test_raw_evidence_never_replaces_an_existing_target(tmp_path):
         payload={"caption": "original"},
         collected_at=collected_at,
     )
-    target = next(tmp_path.rglob(artifact.content_hash + ".json"))
+    target = next(tmp_path.glob(f"*-{artifact.content_hash}.json"))
     target.write_text("pre-existing-content", encoding="utf-8")
 
     with pytest.raises(RuntimeError, match="Immutable raw evidence conflicts"):
@@ -405,24 +408,78 @@ def test_concurrent_identical_evidence_publishes_once(tmp_path):
     assert len(list(tmp_path.rglob("*.json"))) == 1
 
 
-def test_raw_evidence_rejects_symlink_escape(tmp_path):
+def test_raw_evidence_rejects_symlink_root(tmp_path):
     evidence_root = tmp_path / "evidence"
     outside = tmp_path / "outside"
-    evidence_root.mkdir()
     outside.mkdir()
-    account_id = "hostile-account"
-    account_hash = hashlib.sha256(account_id.encode()).hexdigest()
-    (evidence_root / account_hash).symlink_to(outside, target_is_directory=True)
-    storage = LocalRawArtifactStorage(evidence_root)
+    evidence_root.symlink_to(outside, target_is_directory=True)
 
-    with pytest.raises(RuntimeError, match="escaped"):
+    with pytest.raises(RuntimeError, match="root must not be a symlink"):
+        LocalRawArtifactStorage(evidence_root)
+    assert list(outside.iterdir()) == []
+
+
+def test_target_symlink_is_never_followed_or_read(tmp_path, monkeypatch):
+    root = tmp_path / "evidence"
+    outside = tmp_path / "outside.json"
+    outside.write_bytes(b"outside-secret")
+    storage = LocalRawArtifactStorage(root)
+
+    def substitute_target(target):
+        target.symlink_to(outside)
+
+    monkeypatch.setattr(storage, "_before_publish", substitute_target)
+    with pytest.raises(RuntimeError, match="regular file"):
         storage.store(
-            account_id=account_id,
+            account_id="account",
             media_id="media",
             payload={"caption": "safe"},
             collected_at=datetime.now(UTC),
         )
+
+    assert outside.read_bytes() == b"outside-secret"
+    assert list(root.glob(".raw-evidence-*.tmp")) == []
+
+
+def test_replaced_storage_root_fails_before_publication(tmp_path, monkeypatch):
+    root = tmp_path / "evidence"
+    displaced = tmp_path / "displaced"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    storage = LocalRawArtifactStorage(root)
+
+    def substitute_root(_target):
+        root.rename(displaced)
+        root.symlink_to(outside, target_is_directory=True)
+
+    monkeypatch.setattr(storage, "_before_publish", substitute_root)
+    with pytest.raises(RuntimeError, match="root identity changed"):
+        storage.store(
+            account_id="account",
+            media_id="media",
+            payload={"caption": "safe"},
+            collected_at=datetime.now(UTC),
+        )
+
     assert list(outside.iterdir()) == []
+    assert list(displaced.glob(".raw-evidence-*.tmp")) == []
+
+
+def test_non_regular_occupied_target_fails_closed(tmp_path, monkeypatch):
+    storage = LocalRawArtifactStorage(tmp_path)
+
+    def occupy_with_directory(target):
+        target.mkdir()
+
+    monkeypatch.setattr(storage, "_before_publish", occupy_with_directory)
+    with pytest.raises(RuntimeError, match="regular file"):
+        storage.store(
+            account_id="account",
+            media_id="media",
+            payload={"caption": "safe"},
+            collected_at=datetime.now(UTC),
+        )
+    assert list(tmp_path.glob(".raw-evidence-*.tmp")) == []
 
 
 def test_required_environment_configuration(monkeypatch):
