@@ -24,7 +24,7 @@ test = [
 ]
 
 [project.scripts]
-ravehunter = "main:startup"
+ravehunter = "ravehunter.cli:main"
 
 [tool.ruff]
 line-length = 88

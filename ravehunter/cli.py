@@ -6,12 +6,7 @@ import os
 from dataclasses import asdict
 from pathlib import Path
 
-from collectors.shotgun.shotgun import ShotgunCollector
 from database.database import create_tables, get_connection
-from ravehunter.adapters import legacy_event_to_canonical
-from ravehunter.ai.mock_provider import MockProvider
-from ravehunter.collectors.meta import MetaConfig, MetaGraphClient
-from ravehunter.discovery.pipeline import DiscoveryPipeline
 from repositories.event_repository import EventRepository
 
 
@@ -60,6 +55,10 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     repository = _repository()
     if args.command == "collect" and args.collector == "meta":
+        from ravehunter.ai.mock_provider import MockProvider
+        from ravehunter.collectors.meta import MetaConfig, MetaGraphClient
+        from ravehunter.discovery.pipeline import DiscoveryPipeline
+
         records = MetaGraphClient(MetaConfig.from_env()).collect(
             max_pages=args.max_pages
         )
@@ -67,6 +66,9 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(asdict(result)))
         return 0
     if args.command == "collect" and args.collector == "shotgun":
+        from collectors.shotgun.shotgun import ShotgunCollector
+        from ravehunter.adapters import legacy_event_to_canonical
+
         persisted = rejected = 0
         for legacy_event in ShotgunCollector().collect():
             canonical_event = legacy_event_to_canonical(legacy_event)
@@ -77,7 +79,11 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"persisted": persisted, "rejected": rejected}))
         return 0
     if args.command == "events" and args.event_command == "list":
-        print(json.dumps([_event_dict(event) for event in repository.list(city=args.city)]))
+        print(
+            json.dumps(
+                [_event_dict(event) for event in repository.list(city=args.city)]
+            )
+        )
         return 0
     event = repository.get(args.event_id)
     if event is None:
